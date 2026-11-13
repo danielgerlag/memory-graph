@@ -1,0 +1,29 @@
+[project]
+name = "memory-graph-skill"
+version = "0.1.0"
+description = "A portable Git-backed graph memory skill"
+requires-python = ">=3.12"
+dependencies = [
+    "filelock>=3.16,<4",
+    "jsonschema>=4.23,<5",
+    "ruamel.yaml>=0.18,<0.19",
+]
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.100,<7",
+    "mypy>=1.15,<2",
+    "pytest>=8.0,<10",
+    "ruff>=0.11,<1",
+]
+eval = [
+    "inspect-ai==0.3.287",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["memory-graph/scripts", "."]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100

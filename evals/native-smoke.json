@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "dataset_sha256": "065c7bded8ae1e98ad0da381857cd013e9f74312c71dcabe1a468bf7a1ab1b0d",
+  "trials": [
+    {"case_id": "native-positive-02", "trial": 1},
+    {"case_id": "native-negative-01", "trial": 1}
+  ]
+}

@@ -1,0 +1,10 @@
+[project]
+name = "memory-graph-runtime"
+version = "0.1.0"
+description = "Dependencies for the bundled memory graph skill"
+requires-python = ">=3.12"
+dependencies = [
+    "filelock>=3.16,<4",
+    "jsonschema>=4.23,<5",
+    "ruamel.yaml>=0.18,<0.19",
+]

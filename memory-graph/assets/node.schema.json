@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memory-graph.local/schema/node-v1.json",
+  "title": "Memory graph node metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "label", "kind", "status", "created_at", "updated_at", "edges"],
+  "properties": {
+    "schema": {"const": 1},
+    "id": {"$ref": "#/$defs/id"},
+    "label": {"$ref": "#/$defs/nonempty"},
+    "kind": {"$ref": "#/$defs/nonempty"},
+    "aliases": {"type": "array", "items": {"$ref": "#/$defs/nonempty"}},
+    "tags": {"type": "array", "items": {"$ref": "#/$defs/nonempty"}},
+    "scope": {"$ref": "#/$defs/nonempty"},
+    "status": {"enum": ["active", "superseded", "disputed"]},
+    "superseded_by": {"anyOf": [{"$ref": "#/$defs/id"}, {"type": "null"}]},
+    "created_at": {"$ref": "#/$defs/timestamp"},
+    "updated_at": {"$ref": "#/$defs/timestamp"},
+    "review_after": {"anyOf": [{"$ref": "#/$defs/timestamp"}, {"type": "null"}]},
+    "expires_at": {"anyOf": [{"$ref": "#/$defs/timestamp"}, {"type": "null"}]},
+    "importance": {"$ref": "#/$defs/confidence"},
+    "confidence": {"$ref": "#/$defs/confidence"},
+    "evidence_mode": {"enum": ["observed", "reported", "inferred"]},
+    "properties": {"type": "object"},
+    "edges": {"type": "array", "items": {"$ref": "#/$defs/edge"}},
+    "sources": {"type": "array", "items": {"$ref": "#/$defs/source"}}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "superseded"}}, "required": ["status"]},
+      "then": {"required": ["superseded_by"], "properties": {"superseded_by": {"$ref": "#/$defs/id"}}},
+      "else": {"properties": {"superseded_by": {"type": "null"}}}
+    }
+  ],
+  "$defs": {
+    "nonempty": {"type": "string", "minLength": 1},
+    "id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "revision": {"type": "string", "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"},
+    "uri": {"type": "string", "format": "uri", "minLength": 1},
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "to"],
+      "properties": {
+        "label": {"$ref": "#/$defs/nonempty"},
+        "to": {"$ref": "#/$defs/id"},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "properties": {"type": "object"}
+      }
+    },
+    "source": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "observed_at", "uri", "revision", "path"],
+          "properties": {
+            "kind": {"const": "repository_file"},
+            "observed_at": {"$ref": "#/$defs/timestamp"},
+            "uri": {"$ref": "#/$defs/uri"},
+            "revision": {"$ref": "#/$defs/revision"},
+            "path": {"$ref": "#/$defs/nonempty"},
+            "section": {"$ref": "#/$defs/nonempty"},
+            "line": {"type": "integer", "minimum": 1}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "observed_at", "uri"],
+          "properties": {
+            "kind": {"const": "web"},
+            "observed_at": {"$ref": "#/$defs/timestamp"},
+            "uri": {"$ref": "#/$defs/uri"},
+            "content_hash": {"$ref": "#/$defs/nonempty"},
+            "version": {"$ref": "#/$defs/nonempty"},
+            "mutable": {"type": "boolean"}
+          },
+          "anyOf": [
+            {"required": ["content_hash"]},
+            {"required": ["version"]},
+            {"required": ["mutable"], "properties": {"mutable": {"const": true}}}
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "observed_at", "ref"],
+          "properties": {
+            "kind": {"const": "interaction"},
+            "observed_at": {"$ref": "#/$defs/timestamp"},
+            "ref": {"$ref": "#/$defs/nonempty"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "observed_at", "node_id", "revision"],
+          "properties": {
+            "kind": {"const": "memory"},
+            "observed_at": {"$ref": "#/$defs/timestamp"},
+            "node_id": {"$ref": "#/$defs/id"},
+            "revision": {"$ref": "#/$defs/revision"}
+          }
+        }
+      ]
+    }
+  }
+}
