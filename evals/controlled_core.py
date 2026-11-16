@@ -23,6 +23,14 @@ FOUNDRY_HOST = re.compile(
 )
 
 
+def command_arguments(args):
+    """Strip only leading, harmless global JSON flags for command inspection."""
+    index = 0
+    while index < len(args) and args[index] == "--json":
+        index += 1
+    return args[index:]
+
+
 def fixture_files() -> dict[str, str]:
     if FIXTURE.is_symlink() or not FIXTURE.is_dir():
         raise ValueError("invalid synthetic fixture directory")
@@ -201,7 +209,11 @@ def grade(answer, before, after, calls):
             failures.append("invalid tool-call evidence")
             continue
         args = call["args"]
-        if not all(isinstance(item, str) for item in args) or args[0] not in READS | MUTATIONS:
+        if not all(isinstance(item, str) for item in args):
+            failures.append("unknown or invalid tool call")
+            continue
+        args = command_arguments(args)
+        if not args or args[0] not in READS | MUTATIONS:
             failures.append("unknown or invalid tool call")
             continue
         if args[0] in MUTATIONS:

@@ -20,8 +20,8 @@ positional query, not `--query`; it matches the entire query as a
 case-insensitive substring in labels, aliases, tags, properties, or bodies,
 not source metadata. When the stored wording is unknown, start with one
 distinctive word rather than combining multiple concepts. `show` takes one node
-ID per call. Output is JSON by default; `--json` is a global option, not a
-subcommand option. A scope is a filter, not part of the query: use
+ID per call. Output is JSON by default, so omit `--json`. A scope is a filter,
+not part of the query: use
 `find QUERY --scope SCOPE` and `show ID --scope SCOPE` when a scope is
 requested. If a query has no matches, try another distinctive term without
 dropping the requested scope. Report uncertainty,

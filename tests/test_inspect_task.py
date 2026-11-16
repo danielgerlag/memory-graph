@@ -893,11 +893,17 @@ class InspectApiTests(unittest.IsolatedAsyncioTestCase):
         ):
             tool = inspect_task.memory_cli(2, 10)
             self.assertEqual(await tool(["find", "ladder", "--scope", "orchard"]), "{}")
+            self.assertEqual(await tool(["--json", "find", "ladder", "--scope", "orchard"]), "{}")
         self.assertEqual(
             fake.command[:4], ["python3", inspect_task.SCRIPT, "--root", inspect_task.STORE]
         )
+        self.assertEqual(fake.command[4:], ["--json", "find", "ladder", "--scope", "orchard"])
         self.assertFalse(fake.kwargs["timeout_retry"])
         self.assertEqual(state.data["memory_calls"][0]["status"], "success")
+        self.assertEqual(
+            state.data["memory_calls"][1]["args"],
+            ["--json", "find", "ladder", "--scope", "orchard"],
+        )
 
     async def test_root_override_and_tool_limit_are_recorded(self):
         from inspect_ai.tool import ToolError
@@ -919,11 +925,53 @@ class InspectApiTests(unittest.IsolatedAsyncioTestCase):
         ):
             tool = inspect_task.memory_cli(1, 10)
             with self.assertRaises(ToolError):
-                await tool(["find", "ladder", "--root", "/other"])
+                await tool(["--json", "find", "ladder", "--root", "/other"])
             with self.assertRaises(ToolError):
                 await tool(["find", "ladder"])
             sandbox.assert_not_called()
         self.assertEqual([x["status"] for x in state.data["memory_calls"]], ["invalid", "invalid"])
+
+    async def test_graph_tool_accepts_global_json_without_weakening_mutation_guards(self):
+        import behavior_write_tool
+        from inspect_ai.tool import ToolError
+
+        class StateStore:
+            def __init__(self):
+                self.data = {"memory_calls": []}
+
+            def get(self, key, default=None):
+                return self.data.get(key, default)
+
+            def set(self, key, value):
+                self.data[key] = value
+
+        class FakeSandbox:
+            def __init__(self):
+                self.commands = []
+
+            async def exec(self, command, **_kwargs):
+                self.commands.append(command)
+                return ExecResult(success=True, returncode=0, stdout="{}", stderr="")
+
+        state, fake = StateStore(), FakeSandbox()
+        with (
+            patch.object(behavior_write_tool, "sandbox", return_value=fake),
+            patch.object(behavior_write_tool, "store", return_value=state),
+        ):
+            tool = behavior_write_tool.graph_cli(3, 10)
+            valid = ["--json", "create", "--operation", "test", "--input", "-"]
+            self.assertEqual(await tool(valid, "{}"), "{}")
+            with self.assertRaises(ToolError):
+                await tool(["--json", "create", "--operation", "test", "--input", "/private"])
+            with self.assertRaises(ToolError):
+                await tool(["--json", "find", "query", "--root", "/other"])
+        self.assertEqual(len(fake.commands), 1)
+        self.assertEqual(fake.commands[0][4:], valid)
+        self.assertEqual(state.data["memory_calls"][0]["args"], valid)
+        self.assertEqual(
+            [call["status"] for call in state.data["memory_calls"]],
+            ["success", "invalid", "invalid"],
+        )
 
 
 if __name__ == "__main__":

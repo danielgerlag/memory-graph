@@ -72,7 +72,7 @@ uv run --locked --group eval python evals/run_inspect.py --run \
   --log-dir ./eval-runs/controlled-001 \
   --budget-usd 1 --input-price 1 --output-price 2 \
   --time-limit 120 --wall-timeout 180 --tool-timeout 15 --turn-limit 8 --tool-limit 8 \
-  --token-limit 6000 --max-tokens 500 --cpus 1 --memory-mb 512
+  --token-limit 15000 --max-tokens 500 --cpus 1 --memory-mb 512
 ```
 
 For Anthropic use `--model anthropic/<model-id> --credential-env
@@ -182,7 +182,7 @@ uv run --locked --group eval python evals/run_behavior.py --run \
   --log-dir ./eval-runs/behavior-scope-1 \
   --budget-usd 1 --input-price 1 --output-price 2 \
   --time-limit 120 --wall-timeout 180 --tool-timeout 15 --turn-limit 8 --tool-limit 8 \
-  --token-limit 6000 --max-tokens 500 --cpus 1 --memory-mb 512
+  --token-limit 15000 --max-tokens 500 --cpus 1 --memory-mb 512
 ```
 
 `--config` loads the combined YAML configuration; separate `--agent` and

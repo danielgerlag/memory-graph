@@ -6,7 +6,15 @@ import hashlib
 import json
 from pathlib import Path
 
-from controlled_core import FIXTURE_SHA256, MUTATIONS, READS, effective_budget, fixture_files, grade
+from controlled_core import (
+    FIXTURE_SHA256,
+    MUTATIONS,
+    READS,
+    command_arguments,
+    effective_budget,
+    fixture_files,
+    grade,
+)
 from inspect_ai import Task
 from inspect_ai.agent import as_solver, react
 from inspect_ai.dataset import Sample
@@ -156,7 +164,7 @@ def memory_cli(tool_limit: int, tool_timeout: int):
         """Run the bundled memory CLI against the selected synthetic store.
 
         Args:
-            args: CLI arguments beginning with an operation such as find or show.
+            args: CLI arguments, optionally starting with --json, then an operation.
             input_text: Optional JSON request for a mutation using --input -.
         """
         calls = store().get("memory_calls", [])
@@ -164,13 +172,15 @@ def memory_cli(tool_limit: int, tool_timeout: int):
             calls.append({"args": ["tool_limit"], "status": "invalid"})
             store().set("memory_calls", calls)
             raise ToolError("Tool call limit reached")
+        command = command_arguments(args) if isinstance(args, list) else []
         valid = (
             isinstance(args, list)
             and 1 <= len(args) <= 24
             and all(
                 isinstance(item, str) and len(item) <= 1024 and "\x00" not in item for item in args
             )
-            and args[0] in READS | MUTATIONS
+            and bool(command)
+            and command[0] in READS | MUTATIONS
             and not any(item == "--root" or item.startswith("--root=") for item in args)
             and isinstance(input_text, str)
             and len(input_text) <= 65536

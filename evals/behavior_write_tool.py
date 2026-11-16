@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from controlled_core import MUTATIONS, READS
+from controlled_core import MUTATIONS, READS, command_arguments
 from inspect_ai.tool import ToolError, tool
 from inspect_ai.util import sandbox, store
 from inspect_task import SANDBOX_ENV, SCRIPT, STORE
@@ -31,7 +31,7 @@ def graph_cli(
         """Run the bundled memory CLI against the selected synthetic store.
 
         Args:
-            args: CLI arguments beginning with an operation such as find, create, or operation.
+            args: CLI arguments, optionally starting with --json, then an operation.
             input_text: Optional JSON request for an operation using --input -.
         """
         calls = store().get("memory_calls", [])
@@ -39,25 +39,29 @@ def graph_cli(
             calls.append({"args": ["tool_limit"], "status": "invalid"})
             store().set("memory_calls", calls)
             raise ToolError("Tool call limit reached")
+        command_args = command_arguments(args) if isinstance(args, list) else []
         valid = (
             isinstance(args, list)
             and 1 <= len(args) <= 24
             and all(
                 isinstance(item, str) and len(item) <= 1024 and "\x00" not in item for item in args
             )
+            and bool(command_args)
             and (
-                args[0] in READS | MUTATIONS
-                or (args[0] == "operation" and args[1:2] == ["status"])
-                or (local_remote and args in (["status"], ["fetch"]))
-                or (local_remote and allow_proposal and args[0] == "publish")
+                command_args[0] in READS | MUTATIONS
+                or (command_args[0] == "operation" and command_args[1:2] == ["status"])
+                or (local_remote and command_args in (["status"], ["fetch"]))
+                or (local_remote and allow_proposal and command_args[0] == "publish")
             )
             and not any(item == "--root" or item.startswith("--root=") for item in args)
             and isinstance(input_text, str)
             and len(input_text) <= 65536
         )
-        if valid and args[0] in MUTATIONS:
-            valid = args.count("--input") == 1 and args.index("--input") + 1 < len(args)
-            valid = valid and args[args.index("--input") + 1] == "-"
+        if valid and command_args[0] in MUTATIONS:
+            valid = command_args.count("--input") == 1 and command_args.index("--input") + 1 < len(
+                command_args
+            )
+            valid = valid and command_args[command_args.index("--input") + 1] == "-"
         record = {"args": args, "input_text": input_text, "status": "invalid"}
         calls.append(record)
         store().set("memory_calls", calls)

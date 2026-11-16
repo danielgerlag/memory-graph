@@ -438,6 +438,8 @@ class GraderTests(unittest.TestCase):
             {"args": ["create"], "status": "error", "stdout": "", "stderr": ""}
         )
         self.assertFalse(behavior_grader.grade("scope-search", answer, mutation)["success"])
+        mutation["actions"][-1]["args"] = ["--json", "create"]
+        self.assertFalse(behavior_grader.grade("scope-search", answer, mutation)["success"])
         wrong_commit = json.loads(json.dumps(artifacts))
         output = json.loads(wrong_commit["actions"][0]["stdout"])
         output["snapshot"]["commit"] = "b" * 40
@@ -480,9 +482,11 @@ class GraderTests(unittest.TestCase):
             ["find", "--scope=orchard", "ladder"],
             ["find", "--sc", "orchard", "--limit", "20", "ladder"],
             ["find", "ladder", "--scope", "orchard"],
+            ["--json", "find", "--scope", "orchard", "ladder"],
         ):
             with self.subTest(args=args):
                 artifacts["actions"][0]["args"] = args
+                show["args"] = ["--json", "show", "--scope", "orchard", node_id]
                 result = behavior_grader.grade("scope-search", answer, artifacts)
                 self.assertTrue(result["success"], result["failures"])
 
@@ -492,6 +496,7 @@ class GraderTests(unittest.TestCase):
             ["find", "--scope", "orchard", "other"],
             ["find", "--scope", "orchard", "--include-u", "ladder"],
             ["find", "--", "--scope=orchard", "ladder"],
+            ["--json", "find", "--scope", "orchard", "--include-u", "ladder"],
         ):
             with self.subTest(args=args):
                 artifacts["actions"][0]["args"] = args
@@ -508,6 +513,18 @@ class GraderTests(unittest.TestCase):
                 result = behavior_grader.grade(case_id, answer, artifacts)
                 self.assertTrue(result["success"], result["failures"])
 
+    def test_global_json_preserves_recorded_source_checks(self):
+        answer, artifacts = evidence("conflicting-evidence")
+        for action in artifacts["actions"]:
+            action["args"].insert(0, "--json")
+        result = behavior_grader.grade("conflicting-evidence", answer, artifacts)
+        self.assertTrue(result["success"], result["failures"])
+        parsed = json.loads(answer)
+        parsed["sources"].append("invented")
+        self.assertFalse(
+            behavior_grader.grade("conflicting-evidence", json.dumps(parsed), artifacts)["success"]
+        )
+
     def test_positional_extraction_matches_the_actual_cli(self):
         sys.path.insert(0, str(ROOT / "memory-graph/scripts"))
         from graders.arguments import has_flag, positional_argument
@@ -518,6 +535,7 @@ class GraderTests(unittest.TestCase):
             (["find", "--sc=orchard", "ladder"], "query", "ladder"),
             (["find", "--scope", "orchard", "--", "-2"], "query", "-2"),
             (["find", "--scope", "orchard", "-2"], "query", "-2"),
+            (["--json", "find", "--scope", "orchard", "ladder"], "query", "ladder"),
             (["show", "--scope", "orchard", "node-id"], "id", "node-id"),
             (["neighbors", "--scope=orchard", "--direction", "out", "node-id"], "id", "node-id"),
         )

@@ -6,7 +6,7 @@ import json
 import re
 
 from behavior_cases import compile_fixture
-from controlled_core import MUTATIONS, READS, STORE_ID
+from controlled_core import MUTATIONS, READS, STORE_ID, command_arguments
 
 from graders.arguments import has_flag, positional_argument
 from graders.behavior_grader import _json, _option
@@ -201,7 +201,9 @@ def grade_proposal(case_id, answer, artifacts):
                 or not isinstance(action.get("stderr"), str)
             ):
                 raise ValueError("incomplete action evidence")
-            args = action["args"]
+            args = command_arguments(action["args"])
+            if not args:
+                raise ValueError("missing action arguments")
             if args[0] == "create":
                 if (
                     prepared

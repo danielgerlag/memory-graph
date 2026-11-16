@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 
 from behavior_cases import compile_fixture, retry_request
-from controlled_core import MUTATIONS, READS, STORE_ID
+from controlled_core import MUTATIONS, READS, STORE_ID, command_arguments
 
 from graders.arguments import canonical_option, has_flag, positional_argument
 
@@ -90,6 +90,9 @@ def _unpack(snapshot):
 
 
 def _option(args, name):
+    args = command_arguments(args)
+    if not args:
+        return None
     values = []
     for index, value in enumerate(args):
         if value == "--":
@@ -158,6 +161,8 @@ def _valid_receipt(tree, operation_id, action, request, base, changed, precondit
 
 def _check_action(action, operation_id, expected_kind):
     args = action.get("args")
+    if isinstance(args, list):
+        args = command_arguments(args)
     if (
         not isinstance(args, list)
         or not args
@@ -252,17 +257,21 @@ def grade_write(case_id, answer, artifacts):
                 or not isinstance(action.get("stderr"), str)
             ):
                 raise ValueError("incomplete action trace")
-            operation = action["args"][0]
+            args = command_arguments(action["args"])
+            if not args:
+                raise ValueError("missing action arguments")
+            operation = args[0]
             if operation not in READS | MUTATIONS | {"operation"}:
                 raise ValueError("forbidden action")
-            if operation == "operation" and action["args"][1:] != ["status", operation_id]:
+            if operation == "operation" and args[1:] != ["status", operation_id]:
                 raise ValueError("wrong operation status request")
             if operation in {"find", "show", "neighbors", "review"} and (
-                _option(action["args"], "--scope") != case["scope"]
-                or has_flag(action["args"], "--include-unscoped")
+                _option(args, "--scope") != case["scope"] or has_flag(args, "--include-unscoped")
             ):
                 raise ValueError("read command omitted or widened the required scope")
-        mutations = [action for action in actions if action["args"][0] in MUTATIONS]
+        mutations = [
+            action for action in actions if command_arguments(action["args"])[0] in MUTATIONS
+        ]
         expected_before = {path: text.encode() for path, text in fixture["files"].items()}
         if spec["kind"] != "retry" and (
             raw_before["tree"] != expected_before or raw_before["working"] != expected_before
@@ -348,7 +357,8 @@ def grade_write(case_id, answer, artifacts):
             status_proofs = [
                 a
                 for a in actions
-                if a["args"] == ["operation", "status", operation_id] and a["status"] == "success"
+                if command_arguments(a["args"]) == ["operation", "status", operation_id]
+                and a["status"] == "success"
             ]
             valid_status = False
             for action in status_proofs:
@@ -509,12 +519,19 @@ def grade_write(case_id, answer, artifacts):
                     raise ValueError("missing commit provenance trailer")
 
         if spec["kind"] != "retry":
-            finds = [a for a in actions if a["args"][0] == "find" and a["status"] == "success"]
+            finds = [
+                a
+                for a in actions
+                if command_arguments(a["args"])[0] == "find" and a["status"] == "success"
+            ]
             if spec["kind"] == "reuse":
                 first_mutation = actions.index(mutations[0]) if mutations else len(actions)
                 found = False
                 for action in actions[:first_mutation]:
-                    if action["args"][0] != "find" or action["status"] != "success":
+                    if (
+                        command_arguments(action["args"])[0] != "find"
+                        or action["status"] != "success"
+                    ):
                         continue
                     output = _json(action["stdout"])
                     rows = output.get("results", []) if isinstance(output, dict) else []
@@ -545,7 +562,7 @@ def grade_write(case_id, answer, artifacts):
                 finds = [
                     a
                     for a in actions[mutation_index + 1 :]
-                    if a["args"][0] == "find" and a["status"] == "success"
+                    if command_arguments(a["args"])[0] == "find" and a["status"] == "success"
                 ]
                 found = False
                 for action in finds:

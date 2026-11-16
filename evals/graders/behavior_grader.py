@@ -18,7 +18,7 @@ from behavior_cases import (
     dataset,
     prompt_for,
 )
-from controlled_core import MUTATIONS, READS, STORE_ID
+from controlled_core import MUTATIONS, READS, STORE_ID, command_arguments
 from corpus import parse_node
 
 from graders.arguments import canonical_option, has_flag, positional_argument
@@ -42,6 +42,9 @@ def _json(text):
 
 
 def _option(args, name, default=None):
+    args = command_arguments(args)
+    if not args:
+        return None
     values = []
     for index, value in enumerate(args):
         if value == "--":
@@ -285,6 +288,10 @@ def _grade(case_id, answer, artifacts, *, check_sessions):
             or not args
             or not all(isinstance(item, str) for item in args)
         ):
+            failures.append("missing action arguments")
+            continue
+        args = command_arguments(args)
+        if not args:
             failures.append("missing action arguments")
             continue
         operation = args[0]

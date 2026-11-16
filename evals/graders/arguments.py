@@ -2,6 +2,8 @@
 
 import re
 
+from controlled_core import command_arguments
+
 VALUE_OPTIONS = {
     "find": {"--tag", "--kind", "--scope", "--limit"},
     "show": {"--scope", "--commit"},
@@ -25,6 +27,9 @@ def canonical_option(command, option):
 
 
 def has_flag(args, name):
+    args = command_arguments(args)
+    if not args:
+        return False
     for value in args[1:]:
         if value == "--":
             break
@@ -35,6 +40,7 @@ def has_flag(args, name):
 
 def positional_argument(args):
     """Return the sole positional argument, regardless of option placement."""
+    args = command_arguments(args)
     if not args or args[0] not in VALUE_OPTIONS:
         return None
     positionals = []

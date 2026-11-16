@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 
 from behavior_cases import compile_fixture, semantic_id
-from controlled_core import MUTATIONS, READS, STORE_ID
+from controlled_core import MUTATIONS, READS, STORE_ID, command_arguments
 
 from graders.arguments import has_flag, positional_argument
 from graders.behavior_grader import _fixture_matches_corpus, _json, _option
@@ -51,7 +51,9 @@ def grade_special(case_id, answer, artifacts):
                 or not isinstance(action.get("stderr"), str)
             ):
                 raise ValueError("incomplete action evidence")
-            args = action["args"]
+            args = command_arguments(action["args"])
+            if not args:
+                raise ValueError("missing action arguments")
             positional = positional_argument(args)
             if args[0] in MUTATIONS or args[0] not in READS:
                 raise ValueError("mutation or forbidden action in read-only case")

@@ -239,6 +239,37 @@ class RealLocalGitTests(unittest.TestCase):
         self.assertEqual(parsed["created_at"], node["created_at"])
         self.assertEqual(parsed["updated_at"], node["updated_at"])
 
+    def test_scoped_source_grader_accepts_global_json_from_real_cli(self):
+        root, fixture = self.create_store("conflicting-evidence")
+        before_full = self.snapshot(root)
+        scope = fixture["case"]["scope"]
+        spec = fixture["spec"]
+        actions = [self.cli(root, ["--json", "find", "--scope", scope, spec["query"]])]
+        actions.extend(
+            self.cli(root, ["--json", "show", "--scope", scope, fixture["ids"][alias]])
+            for alias in spec["targets"]
+        )
+        after_full = self.snapshot(root)
+        keys = ("main", "refs", "files", "tree_files")
+        before = {key: before_full[key] for key in keys}
+        after = {key: after_full[key] for key in keys}
+        answer = json.dumps(
+            {
+                "node_ids": [fixture["ids"][alias] for alias in spec["targets"]],
+                "facts": spec["facts"],
+                "sources": spec["sources"],
+                "notices": spec["notices"],
+                "store_id": STORE_ID,
+                "commit": before["main"],
+            }
+        )
+        result = behavior_grader.grade(
+            "conflicting-evidence",
+            answer,
+            {"before": before, "after": after, "actions": actions},
+        )
+        self.assertTrue(result["success"], result["failures"])
+
     def test_create_real_nodes_receipts_and_reject_bad_evidence(self):
         for case_id in ("remember-fact", "remember-second-domain"):
             with self.subTest(case_id=case_id):
@@ -260,7 +291,7 @@ class RealLocalGitTests(unittest.TestCase):
                 }
                 action = self.cli(
                     root,
-                    ["create", "--operation", fixture["operation_id"], "--input", "-"],
+                    ["--json", "create", "--operation", fixture["operation_id"], "--input", "-"],
                     request,
                 )
                 result = json.loads(action["stdout"])
