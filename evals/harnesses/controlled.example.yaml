@@ -1,0 +1,8 @@
+# Placeholder only; edit image to an installed immutable image reference.
+# Supply budgets, limits and explicit authorization separately.
+# Existing runner validators remain authoritative; this does not execute a run.
+schema_version: 1
+runner: controlled
+name: Controlled harness example
+options:
+  image: "<EDIT_IMAGE>"

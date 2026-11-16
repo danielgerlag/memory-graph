@@ -1,5 +1,6 @@
 /planning/
 /eval-runs/
+/evals/configs/*.local.yaml
 **/.venv/
 /.venv-312/
 /.pytest_cache/

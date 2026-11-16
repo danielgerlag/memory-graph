@@ -30,9 +30,9 @@ repository, not the skill directory.
 
 ## Install in an agent host
 
-Copy the complete `memory-graph/` directory to one of these locations, then
-run the setup command above against the copy. Consult each host's current
-documentation for user-level locations and activation behavior.
+Install the complete `memory-graph/` directory at one of these locations, then
+run the setup command above against the installed copy. Consult each host's
+current documentation for activation behavior.
 
 | Host | Project-local location | Personal location |
 | --- | --- | --- |
@@ -43,28 +43,22 @@ documentation for user-level locations and activation behavior.
 Copilot CLI also discovers `.agents/skills` and `~/.agents/skills`, so it can
 share a copy with Codex. Other Copilot surfaces may differ.
 
-For example, from a checkout of this project, install into a different
-project's Copilot discovery directory:
+For example, on macOS/Linux, export from a checkout of this project into a
+different project's Copilot discovery directory:
 
 ```sh
+uv sync --locked --project ./memory-graph
 mkdir -p /path/to/project/.github/skills
-cp -R memory-graph /path/to/project/.github/skills/memory-graph
+memory-graph/.venv/bin/python memory-graph/scripts/memory_graph.py \
+  export-skill --dest /path/to/project/.github/skills/memory-graph
 uv sync --locked --project /path/to/project/.github/skills/memory-graph
 ```
 
 For Claude Code or Codex, substitute `.claude/skills` or `.agents/skills`
-respectively. Copy from a clean checkout before running setup, so the
-development virtual environment is not copied.
-
-Alternatively, after preparing the source skill's environment:
-
-```sh
-memory-graph/.venv/bin/python memory-graph/scripts/memory_graph.py \
-  export-skill --dest /path/to/project/.github/skills/memory-graph
-```
-
-Export refuses an existing destination, symlinks, and unexpected top-level
-bundle entries; it excludes virtual environments and bytecode caches.
+respectively. Export refuses an existing destination, symlinks, and unexpected
+top-level bundle entries; it excludes virtual environments and bytecode caches.
+If copying manually instead, exclude those directories: a clean Git status
+does not mean ignored virtual environments are absent.
 
 Restart or refresh the host if needed and check its skill discovery output.
 In Copilot CLI, `copilot skill list` shows discovered skills.
@@ -87,10 +81,13 @@ printf '%s\n' '{"label":"Example note","kind":"claim","body":"A durable fact.","
 "$MG" "$SCRIPT" --root "$STORE" find "example" --scope example
 ```
 
-Start a fresh agent session with the same store and ask it to recall the
-fact. See [recipes](memory-graph/references/recipes.md) for revisions,
-relationships, lifecycle, and remote proposals. Run any command with `--help`
-for its arguments.
+Start a fresh agent session, give it the absolute path in `STORE`, and ask it
+to recall the fact. For example: "Using the memory store at
+`/absolute/path/to/my-memory-store`, recall the example note." The CLI does
+not automatically select a store. See
+[recipes](memory-graph/references/recipes.md) for revisions, relationships,
+lifecycle, and remote proposals. Run any command with `--help` for its
+arguments.
 
 ## Sharing and security
 

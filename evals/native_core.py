@@ -10,6 +10,8 @@ import re
 import tarfile
 from pathlib import Path
 
+from corpus import verify_corpus
+
 ROOT = Path(__file__).resolve().parents[1]
 DATASET = ROOT / "evals" / "scenarios.json"
 SKILL = ROOT / "memory-graph"
@@ -41,6 +43,7 @@ def read_json_bytes(raw):
 
 
 def load_trials(manifest_path):
+    verify_corpus()
     dataset_raw = DATASET.read_bytes()
     dataset = read_json_bytes(dataset_raw)
     manifest_raw = Path(manifest_path).read_bytes()

@@ -1,0 +1,57 @@
+order: 5
+id: directed-traversal
+lane: behavior
+category: traversal
+prompts:
+- What does the red cart carry directly?
+fixture:
+  main:
+    directory: fixtures/graphs/directed-traversal
+    nodes:
+    - alias: cart
+      file: 3b34560b-051c-4a69-a86d-6c41ae585dc9.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: tools
+      file: 7465871c-0343-423d-b9d5-61ff456cb492.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: shed
+      file: 6d58ed7b-0260-4102-a83f-2a5b2d73dd13.md
+      fields:
+      - label
+      - scope
+      - id
+scope: orchard
+clock: '2026-01-15T12:00:00Z'
+allowed_mutations: []
+forbidden_actions: []
+checks:
+- path: /answer/node_ids
+  op: equals
+  value:
+  - tools
+- path: /graph/main/edges
+  op: contains
+  value:
+    from: cart
+    label: carries
+    to: tools
+- path: /query/depth
+  op: equals
+  value: 1
+controlled:
+  kind: traversal
+  query: red cart
+  root: cart
+  edge: carries
+  depth: 1
+  targets:
+  - tools
+  facts:
+  - tools
+  instruction: Do not modify the store.

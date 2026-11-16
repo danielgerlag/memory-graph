@@ -1,0 +1,50 @@
+order: 11
+id: scope-traversal
+lane: behavior
+category: scope
+prompts:
+- Follow the route from the orchard gate without crossing scopes.
+fixture:
+  main:
+    directory: fixtures/graphs/scope-traversal
+    nodes:
+    - alias: gate
+      file: 7ba12b43-52ce-402d-9893-573aaaa545f4.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: tree
+      file: 233643e4-7c01-4802-84d5-8dc786608ba3.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: bench
+      file: 4e27c8a8-e689-4457-a792-1bafd97f4914.md
+      fields:
+      - label
+      - scope
+      - id
+scope: orchard
+clock: '2026-01-15T12:00:00Z'
+allowed_mutations: []
+forbidden_actions: []
+checks:
+- path: /answer/node_ids
+  op: equals
+  value:
+  - tree
+controlled:
+  kind: traversal
+  query: gate
+  root: gate
+  edge: route
+  depth: 1
+  targets:
+  - tree
+  facts:
+  - tree
+  forbidden:
+  - bench
+  instruction: Do not modify the store.

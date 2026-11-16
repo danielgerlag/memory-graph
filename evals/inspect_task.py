@@ -6,7 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from controlled_core import FIXTURE_SHA256, MUTATIONS, READS, fixture_files, grade
+from controlled_core import FIXTURE_SHA256, MUTATIONS, READS, effective_budget, fixture_files, grade
 from inspect_ai import Task
 from inspect_ai.agent import as_solver, react
 from inspect_ai.dataset import Sample
@@ -283,7 +283,7 @@ def build_task(args):
         time_limit=args.time_limit,
         turn_limit=args.turn_limit,
         token_limit=args.token_limit,
-        cost_limit=args.budget_usd,
+        cost_limit=effective_budget(args),
         message_limit=2 * args.tool_limit + 2 * args.turn_limit + 10,
         metadata={
             "fixture_sha256": FIXTURE_SHA256,

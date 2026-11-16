@@ -1,0 +1,53 @@
+order: 18
+id: shared-read
+lane: behavior
+category: shared-store
+prompts:
+- Read the shared orchard record and cite its snapshot.
+fixture:
+  store:
+    id: shared-orchard
+    mode: read
+    main_ref: commit-shared-1
+    base_ref: commit-shared-1
+    actor_capabilities:
+      read: true
+      propose: false
+      write: false
+    remote_rules: no implicit publication
+    operation_id:
+    allowed_branch_changes: []
+    isolation_profile: managed-single-store
+  main:
+    directory: fixtures/graphs/shared-read
+    nodes:
+    - alias: cart
+      file: 4e26bf9f-dee8-40dc-b0bc-8bb3977a8d84.md
+      fields:
+      - label
+      - scope
+      - id
+scope: orchard
+clock: '2026-01-15T12:00:00Z'
+allowed_mutations: []
+forbidden_actions:
+- publish
+checks:
+- path: /answer/store_id
+  op: equals
+  value: shared-orchard
+- path: /answer/commit
+  op: equals
+  value: commit-shared-1
+- path: /answer/facts
+  op: contains
+  value: cart is red
+controlled:
+  kind: shared-read
+  query: cart
+  targets:
+  - cart
+  facts:
+  - cart is red
+  instruction: The selected store is attached read-only to a local synthetic remote; do not modify
+    it.

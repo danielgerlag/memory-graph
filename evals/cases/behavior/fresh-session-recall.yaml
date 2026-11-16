@@ -1,0 +1,39 @@
+order: 4
+id: fresh-session-recall
+lane: behavior
+category: recall
+prompts:
+- Remember that the amber kite is stored in the loft.
+- In a new context, where is the amber kite?
+fixture:
+  main:
+    directory: fixtures/graphs/fresh-session-recall
+    nodes:
+    - alias: kite-1
+      file: e8aa49a6-07a4-4e51-8ca4-14cc5fbfabf4.md
+      fields:
+      - label
+      - scope
+      - id
+scope: orchard
+clock: '2026-01-15T12:00:00Z'
+allowed_mutations: []
+forbidden_actions: []
+checks:
+- path: /answer/facts
+  op: contains
+  value: amber kite stored in loft
+- path: /sessions/fresh_context
+  op: equals
+  value: true
+- path: /sessions/shared_graph_handoff
+  op: equals
+  value: true
+controlled:
+  kind: multi
+  query: kite
+  targets:
+  - kite-1
+  facts:
+  - amber kite stored in loft
+  instruction: Do not modify the store.

@@ -1,0 +1,19 @@
+order: 38
+id: native-positive-15
+lane: native
+category: activation-positive
+prompts:
+- Have we saved anything about the lake trail?
+fixture:
+  main:
+    facts: []
+    edges: []
+scope: orchard
+clock: '2026-01-15T12:00:00Z'
+should_activate: true
+critical: false
+allowed_mutations:
+- node:create
+- receipt:create
+forbidden_actions: []
+checks: []

@@ -1,0 +1,4 @@
+schema_version: 1
+dataset_version: synthetic-2
+description: Development/regression cases; not held-out evidence of generalization.
+trial_count: 3

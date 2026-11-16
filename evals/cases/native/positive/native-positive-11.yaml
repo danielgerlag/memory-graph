@@ -1,0 +1,19 @@
+order: 34
+id: native-positive-11
+lane: native
+category: activation-positive
+prompts:
+- Store my observation that the west window sticks.
+fixture:
+  main:
+    facts: []
+    edges: []
+scope: orchard
+clock: '2026-01-15T12:00:00Z'
+should_activate: true
+critical: false
+allowed_mutations:
+- node:create
+- receipt:create
+forbidden_actions: []
+checks: []

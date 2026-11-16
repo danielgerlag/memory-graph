@@ -17,7 +17,9 @@ dev = [
     "ruff>=0.11,<1",
 ]
 eval = [
+    "azure-identity>=1.24,<2",
     "inspect-ai==0.3.287",
+    "openai>=3.4.0,<4",
 ]
 
 [tool.pytest.ini_options]

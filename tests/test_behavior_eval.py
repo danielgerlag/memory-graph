@@ -3,7 +3,10 @@
 import hashlib
 import io
 import json
+import os
+import signal
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,9 +15,9 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "evals"))
 import behavior_cases
-import behavior_grader
 import run_behavior
 from controlled_core import STORE_ID
+from graders import behavior_grader
 
 
 def evidence(case_id):
@@ -167,10 +170,17 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual(pending["status"], "disputed")
         self.assertEqual(competing["status"], "disputed")
 
+    def test_retry_prompt_uses_declarative_seed_values(self):
+        request = behavior_cases.retry_request("lost-ack-retry")
+        prompt = behavior_cases.prompt_for("lost-ack-retry", 0)
+        for value in request.values():
+            self.assertIn(value, prompt)
+        self.assertNotIn("$seed_", prompt)
+
     def test_publication_cases_fail_closed_before_setup(self):
-        from behavior_concurrent_grader import grade_concurrent
-        from behavior_fetch_grader import grade_fetch
-        from behavior_proposal_grader import grade_proposal
+        from graders.behavior_concurrent_grader import grade_concurrent
+        from graders.behavior_fetch_grader import grade_fetch
+        from graders.behavior_proposal_grader import grade_proposal
 
         direct_graders = {
             "accepted-after-fetch": grade_fetch,
@@ -304,6 +314,43 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual(status, 2)
         mkdir.assert_not_called()
 
+    @unittest.skipUnless(hasattr(signal, "SIGALRM"), "controlled runs require SIGALRM")
+    def test_default_azure_auth_failure_does_not_start_a_trial_or_leak_details(self):
+        from azure.core.exceptions import ClientAuthenticationError
+
+        with tempfile.TemporaryDirectory(dir=ROOT) as temporary:
+            root = Path(temporary).resolve()
+            config = (ROOT / "evals/configs/foundry.example.yaml").read_text()
+            config = (
+                config.replace("<deployment-name>", "fixture-deployment")
+                .replace("<resource>", "example")
+                .replace("sha256:<local-image-id>", "sha256:" + "a" * 64)
+                .replace("<input-usd-per-million>", "1")
+                .replace("<output-usd-per-million>", "2")
+            )
+            config_path = root / "config.yaml"
+            config_path.write_text(config)
+            output = root / "run"
+            env = {"HOME": str(root), "PATH": os.defpath, "AZURE_CLIENT_SECRET": "synthetic-secret"}
+            with (
+                patch.dict(os.environ, env, clear=True),
+                patch("azure.identity.DefaultAzureCredential") as factory,
+                patch("inspect_ai.eval") as inspect_eval,
+                patch("sys.stderr", new_callable=io.StringIO) as stderr,
+            ):
+                credential = factory.return_value.__enter__.return_value
+                credential.get_token.side_effect = ClientAuthenticationError("synthetic-secret")
+                status = run_behavior.main(
+                    ["--run", "--config", str(config_path), "--log-dir", str(output)]
+                )
+                self.assertEqual(status, 2)
+                self.assertIn("az login", stderr.getvalue())
+                self.assertNotIn("synthetic-secret", stderr.getvalue())
+                inspect_eval.assert_not_called()
+                report = json.loads((output / "report.json").read_text())
+                self.assertEqual(report["status"], "NOT RUN")
+                self.assertNotIn("synthetic-secret", json.dumps(report))
+
     def test_retained_log_must_exist_within_the_declared_directory(self):
         fixture = ROOT / "evals/scenarios.json"
         self.assertTrue(run_behavior.valid_log_location(str(fixture), fixture.parent))
@@ -317,14 +364,14 @@ class FixtureTests(unittest.TestCase):
     def test_adapter_provenance_covers_new_graders_and_capture(self):
         hashes = run_behavior.adapter_hashes()
         for name in (
-            "behavior_write_grader.py",
+            "graders/behavior_write_grader.py",
             "behavior_shared_capture.py",
-            "behavior_fetch_grader.py",
-            "behavior_proposal_grader.py",
-            "behavior_special_grader.py",
+            "graders/behavior_fetch_grader.py",
+            "graders/behavior_proposal_grader.py",
+            "graders/behavior_special_grader.py",
             "behavior_concurrent_capture.py",
             "behavior_concurrent_tool.py",
-            "behavior_concurrent_grader.py",
+            "graders/behavior_concurrent_grader.py",
         ):
             self.assertEqual(len(hashes[name]), 64)
 
@@ -405,6 +452,84 @@ class GraderTests(unittest.TestCase):
         artifacts["actions"][0]["stdout"] = json.dumps(output)
         self.assertTrue(behavior_grader.grade("scope-search", answer, artifacts)["success"])
 
+    def test_scoped_reads_accept_options_before_or_after_positionals(self):
+        answer, artifacts = evidence("scope-search")
+        fixture = behavior_cases.compile_fixture("scope-search")
+        node_id = fixture["ids"]["orchard-ladder"]
+        provenance = {
+            "store_id": STORE_ID,
+            "commit": artifacts["before"]["main"],
+            "source": "main",
+        }
+        show = {
+            "args": ["show", "--scope", "orchard", node_id],
+            "status": "success",
+            "stdout": json.dumps(
+                {
+                    "output_schema": 1,
+                    "snapshot": provenance,
+                    "node": fixture["nodes"]["orchard-ladder"],
+                    "body": "",
+                }
+            ),
+            "stderr": "",
+        }
+        artifacts["actions"].append(show)
+        for args in (
+            ["find", "--scope", "orchard", "ladder"],
+            ["find", "--scope=orchard", "ladder"],
+            ["find", "--sc", "orchard", "--limit", "20", "ladder"],
+            ["find", "ladder", "--scope", "orchard"],
+        ):
+            with self.subTest(args=args):
+                artifacts["actions"][0]["args"] = args
+                result = behavior_grader.grade("scope-search", answer, artifacts)
+                self.assertTrue(result["success"], result["failures"])
+
+    def test_reordered_arguments_do_not_weaken_scope_or_query_checks(self):
+        answer, artifacts = evidence("scope-search")
+        for args in (
+            ["find", "--scope", "orchard", "other"],
+            ["find", "--scope", "orchard", "--include-u", "ladder"],
+            ["find", "--", "--scope=orchard", "ladder"],
+        ):
+            with self.subTest(args=args):
+                artifacts["actions"][0]["args"] = args
+                self.assertFalse(
+                    behavior_grader.grade("scope-search", answer, artifacts)["success"]
+                )
+
+    def test_reordered_traversal_options_are_accepted(self):
+        for case_id in ("directed-traversal", "bounded-traversal"):
+            with self.subTest(case_id=case_id):
+                answer, artifacts = evidence(case_id)
+                args = artifacts["actions"][1]["args"]
+                artifacts["actions"][1]["args"] = [args[0], *args[2:], args[1]]
+                result = behavior_grader.grade(case_id, answer, artifacts)
+                self.assertTrue(result["success"], result["failures"])
+
+    def test_positional_extraction_matches_the_actual_cli(self):
+        sys.path.insert(0, str(ROOT / "memory-graph/scripts"))
+        from graders.arguments import has_flag, positional_argument
+        from memory_graph.cli import parser
+
+        samples = (
+            (["find", "--scope", "orchard", "ladder"], "query", "ladder"),
+            (["find", "--sc=orchard", "ladder"], "query", "ladder"),
+            (["find", "--scope", "orchard", "--", "-2"], "query", "-2"),
+            (["find", "--scope", "orchard", "-2"], "query", "-2"),
+            (["show", "--scope", "orchard", "node-id"], "id", "node-id"),
+            (["neighbors", "--scope=orchard", "--direction", "out", "node-id"], "id", "node-id"),
+        )
+        for args, field, expected in samples:
+            with self.subTest(args=args):
+                parsed = parser().parse_args(args)
+                self.assertEqual(getattr(parsed, field), expected)
+                self.assertEqual(positional_argument(args), expected)
+        self.assertTrue(has_flag(["find", "--include-u", "query"], "--include-unscoped"))
+        self.assertFalse(has_flag(["find", "--", "--include-unscoped"], "--include-unscoped"))
+        self.assertIsNone(behavior_grader._option(["find", "--", "--scope=orchard"], "--scope"))
+
     def test_wrong_traversal_depth_direction_and_via_fail(self):
         answer, artifacts = evidence("bounded-traversal")
         for index, value in [
@@ -445,6 +570,11 @@ class GraderTests(unittest.TestCase):
         self.assertFalse(behavior_grader.grade("bounded-traversal", answer, artifacts)["success"])
 
     def test_fabricated_evidence_and_unexposed_injection_fail(self):
+        answer, artifacts = evidence("scope-search")
+        parsed = json.loads(answer)
+        parsed["sources"] = parsed["node_ids"]
+        result = behavior_grader.grade("scope-search", json.dumps(parsed), artifacts)
+        self.assertIn("incorrect final answer: sources", result["failures"])
         answer, artifacts = evidence("missing-evidence")
         parsed = json.loads(answer)
         parsed["sources"] = ["invented"]
@@ -559,6 +689,16 @@ class GraderTests(unittest.TestCase):
             run_behavior.result_problems(logs, "scope-search", 1.0)[0],
         )
         score.metadata = {"artifacts": artifacts}
+        sample.model_usage["model"].total_cost = None
+        problems, usage, _, _ = run_behavior.result_problems(
+            logs, "scope-search", None, pricing=False
+        )
+        self.assertEqual(problems, [])
+        self.assertEqual(usage["model"], {"tokens": 100, "cost_usd": None})
+        self.assertIn(
+            "missing model cost evidence",
+            run_behavior.result_problems(logs, "scope-search", 1.0, pricing=True)[0],
+        )
         sample.model_usage = {}
         self.assertIn(
             "missing model token usage", run_behavior.result_problems(logs, "scope-search", 1.0)[0]
@@ -773,11 +913,40 @@ class InspectAdapterTests(unittest.IsolatedAsyncioTestCase):
         task = behavior_inspect.build_task(args)
         self.assertEqual(task.sandbox.type, "docker")
         self.assertEqual(task.sandbox.config.services["default"].network_mode, "none")
+        self.assertEqual(
+            task.sandbox.config.services["default"].environment, {"HOME": "/workspace"}
+        )
         self.assertEqual(task.metadata["trial"], 1)
         self.assertEqual(task.dataset[0].target, "")
         self.assertNotIn(
             behavior_cases.compile_fixture(args.case_id)["ids"]["tools"], task.dataset[0].input
         )
+
+    def test_all_behavior_harnesses_disable_budget_without_prices(self):
+        args = SimpleNamespace(
+            case_id="scope-search",
+            trial=1,
+            image="example/image@sha256:" + "a" * 64,
+            tool_timeout=10,
+            tool_limit=5,
+            memory_mb=512,
+            cpus=1,
+            time_limit=60,
+            turn_limit=5,
+            token_limit=4000,
+            budget_usd=1.0,
+            input_price=None,
+            output_price=None,
+        )
+        for case_id in ("scope-search", "remember-fact", "shared-read"):
+            with self.subTest(case_id=case_id):
+                args.case_id = case_id
+                self.assertIsNone(behavior_inspect.build_task(args).cost_limit)
+                args.input_price = 1.0
+                args.output_price = 2.0
+                self.assertEqual(behavior_inspect.build_task(args).cost_limit, 1.0)
+                args.input_price = None
+                args.output_price = None
 
     def test_unsupported_shared_tasks_cannot_be_built(self):
         args = SimpleNamespace(

@@ -14,6 +14,7 @@ import sys
 import time
 from pathlib import Path
 
+from corpus import verify_corpus
 from native_core import (
     CONTAINER_STORE,
     CONTAINER_WORKSPACE,
@@ -29,6 +30,7 @@ from native_core import (
     skill_digest,
     validate_options,
 )
+from profiles import apply_profiles
 
 SNAPSHOT = r"""
 import hashlib, json, os, subprocess, sys
@@ -126,19 +128,21 @@ def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--run", action="store_true")
     p.add_argument("--allow-network", action="store_true")
+    p.add_argument("--agent", help="YAML agent profile")
+    p.add_argument("--harness", help="YAML harness profile")
     p.add_argument("--manifest", required=True)
     p.add_argument("--output-dir", required=True)
-    p.add_argument("--image", required=True)
-    p.add_argument("--host-version", required=True)
-    p.add_argument("--model", required=True)
-    p.add_argument("--credential-env", required=True)
-    p.add_argument("--session-ai-credits", required=True, type=int)
-    p.add_argument("--run-ai-credits", required=True, type=int)
-    p.add_argument("--session-timeout", required=True, type=int)
-    p.add_argument("--run-timeout", required=True, type=int)
-    p.add_argument("--cpus", required=True, type=float)
-    p.add_argument("--memory-mb", required=True, type=int)
-    p.add_argument("--max-output-mb", required=True, type=int)
+    p.add_argument("--image")
+    p.add_argument("--host-version")
+    p.add_argument("--model")
+    p.add_argument("--credential-env")
+    p.add_argument("--session-ai-credits", type=int)
+    p.add_argument("--run-ai-credits", type=int)
+    p.add_argument("--session-timeout", type=int)
+    p.add_argument("--run-timeout", type=int)
+    p.add_argument("--cpus", type=float)
+    p.add_argument("--memory-mb", type=int)
+    p.add_argument("--max-output-mb", type=int)
     p.add_argument("--docker-host")
     return p
 
@@ -527,6 +531,7 @@ def main(argv=None):
     root = None
     created = False
     try:
+        apply_profiles(args, runner="native")
         trials, dataset_hash, manifest_hash = load_trials(args.manifest)
         validate_options(args, os.environ, trials)
         bundle = skill_bundle()
@@ -561,6 +566,7 @@ def main(argv=None):
             "release": "BLOCKED",
             "activation": "UNVERIFIED",
             "dataset_sha256": dataset_hash,
+            "corpus_source_sha256": verify_corpus()[4],
             "manifest_sha256": manifest_hash,
             "skill_sha256": skill_digest(bundle),
             "fixture_archive_sha256": hashlib.sha256(archive).hexdigest(),

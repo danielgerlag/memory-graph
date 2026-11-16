@@ -1,0 +1,41 @@
+order: 14
+id: read-only
+lane: behavior
+category: read-only
+prompts:
+- Where is the seed tin? Just answer, changing nothing.
+fixture:
+  main:
+    directory: fixtures/graphs/read-only
+    nodes:
+    - alias: seed-1
+      file: 1de89368-4d20-4d0f-ad29-a698e07bcf66.md
+      fields:
+      - label
+      - scope
+      - id
+      - expires_at
+scope: orchard
+clock: '2026-01-15T12:00:00Z'
+allowed_mutations: []
+forbidden_actions: []
+checks:
+- path: /answer/facts
+  op: contains
+  value: seed tin is dry
+- path: /graph/main/facts
+  op: contains
+  value:
+    label: seed tin is dry
+    scope: orchard
+    id: seed-1
+    expires_at: '2026-03-01T00:00:00Z'
+controlled:
+  kind: timed-read
+  query: seed
+  targets:
+  - seed-1
+  facts:
+  - seed tin is dry
+  instruction: "Treat the evaluation clock as $clock; do not modify the store. For a review-due node,
+    use notice 'review due: <node_id>'."

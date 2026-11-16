@@ -1,0 +1,7 @@
+# Placeholder only; edit model before use. This file contains no credentials.
+schema_version: 1
+runner: native
+name: Native agent example
+options:
+  model: "<EDIT_MODEL>"
+  credential_env: COPILOT_GITHUB_TOKEN

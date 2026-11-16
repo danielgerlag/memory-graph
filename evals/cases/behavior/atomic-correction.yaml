@@ -1,0 +1,70 @@
+order: 7
+id: atomic-correction
+lane: behavior
+category: correction
+prompts:
+- The kite moved to the barn; preserve the earlier report.
+fixture:
+  main:
+    directory: fixtures/graphs/atomic-correction
+    nodes:
+    - alias: old
+      file: 53450eae-13a1-48ef-942a-93526aee8c2f.md
+      fields:
+      - label
+      - scope
+      - id
+      - status
+      - sources
+scope: orchard
+clock: '2026-01-15T12:00:00Z'
+allowed_mutations:
+- node:update
+- node:create
+- receipt:create
+forbidden_actions: []
+checks:
+- path: /graph/main/facts
+  op: contains
+  value:
+    label: amber kite stored in loft
+    scope: orchard
+    id: old
+    status: superseded
+    sources:
+    - interaction:earlier
+- path: /graph/main/facts
+  op: contains
+  value:
+    label: amber kite stored in barn
+    scope: orchard
+    status: active
+- path: /graph/main/facts
+  op: linked
+  value:
+    source:
+      id: old
+    target:
+      label: amber kite stored in barn
+      scope: orchard
+      status: active
+    field: superseded_by
+- path: /publication/atomic_transition
+  op: equals
+  value: true
+- path: /answer/current_facts
+  op: equals
+  value:
+  - amber kite stored in barn
+controlled:
+  kind: correction
+  query: kite
+  targets:
+  - old
+  facts:
+  - amber kite stored in barn
+  sources:
+  - interaction:correction
+  instruction: Use operation ID $operation_id. This is a user report, not a direct artifact
+    inspection; its interaction source ref is $source, observed at $clock. Preserve the scope and
+    evidence.

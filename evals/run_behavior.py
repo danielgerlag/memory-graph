@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import os
 import signal
 import sys
@@ -14,27 +13,33 @@ from urllib.parse import unquote, urlsplit
 
 import run_inspect
 from behavior_cases import DATASET_SHA256, SPECS, UNSUPPORTED, inventory
-from behavior_grader import grade
-from controlled_core import validate_options
+from controlled_core import effective_budget, pricing_configured, validate_options
+from corpus import verify_corpus
+from graders.behavior_grader import grade
+from profiles import apply_profiles
 
 ADAPTER_FILES = (
     "behavior_cases.py",
+    "corpus.py",
+    "corpus.lock.json",
+    "profiles.py",
     "behavior_capture.py",
-    "behavior_grader.py",
+    "graders/arguments.py",
+    "graders/behavior_grader.py",
     "behavior_inspect.py",
     "behavior_write_capture.py",
     "behavior_write_tool.py",
-    "behavior_write_grader.py",
+    "graders/behavior_write_grader.py",
     "behavior_write_inspect.py",
     "behavior_shared_capture.py",
-    "behavior_shared_grader.py",
+    "graders/behavior_shared_grader.py",
     "behavior_shared_inspect.py",
-    "behavior_fetch_grader.py",
+    "graders/behavior_fetch_grader.py",
     "behavior_concurrent_capture.py",
     "behavior_concurrent_tool.py",
-    "behavior_concurrent_grader.py",
-    "behavior_proposal_grader.py",
-    "behavior_special_grader.py",
+    "graders/behavior_concurrent_grader.py",
+    "graders/behavior_proposal_grader.py",
+    "graders/behavior_special_grader.py",
     "controlled_core.py",
     "inspect_task.py",
     "run_inspect.py",
@@ -44,7 +49,7 @@ ADAPTER_FILES = (
 
 def adapter_hashes():
     return {
-        name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
+        name: hashlib.sha256((Path(__file__).parent / name).read_bytes()).hexdigest()
         for name in ADAPTER_FILES
     }
 
@@ -60,7 +65,7 @@ def parser():
     return p
 
 
-def result_problems(logs, case_id, budget):
+def result_problems(logs, case_id, budget, *, pricing=True):
     problems = []
     usage_report = {}
     score_detail = None
@@ -95,23 +100,8 @@ def result_problems(logs, case_id, budget):
             observations = checked["observations"]
             if checked["success"] != (score.value == "C"):
                 problems.append("inconsistent captured grading artifacts")
-    if not sample.model_usage or not all(
-        usage.total_tokens is not None and usage.total_tokens > 0
-        for usage in sample.model_usage.values()
-    ):
-        problems.append("missing model token usage")
-    elif any(
-        usage.total_cost is None or not math.isfinite(usage.total_cost)
-        for usage in sample.model_usage.values()
-    ):
-        problems.append("missing model cost evidence")
-    else:
-        usage_report = {
-            name: {"tokens": usage.total_tokens, "cost_usd": usage.total_cost}
-            for name, usage in sample.model_usage.items()
-        }
-        if sum(usage.total_cost for usage in sample.model_usage.values()) > budget:
-            problems.append("reported cost exceeds the budget")
+    usage_report, usage_problems = run_inspect.usage_summary(sample, pricing=pricing, budget=budget)
+    problems.extend(usage_problems)
     return problems, usage_report, score_detail, observations
 
 
@@ -152,6 +142,7 @@ def main(argv=None):
     created = False
     attempted = False
     try:
+        apply_profiles(args, runner="controlled")
         cases = inventory()
         if args.inventory:
             print(json.dumps({"status": "NOT RUN", "cases": cases}, indent=2))
@@ -162,7 +153,9 @@ def main(argv=None):
             return 2
         if type(args.trial) is not int or not 1 <= args.trial <= 3:
             raise ValueError("--trial must explicitly be 1, 2, or 3")
+        run_inspect.default_log_dir(args, "behavior")
         validate_options(args, os.environ)
+        run_inspect.warn_if_unbudgeted(args)
         source_hashes = adapter_hashes()
         if not hasattr(signal, "SIGALRM"):
             raise ValueError("the outer wall timeout requires SIGALRM (Unix)")
@@ -174,20 +167,10 @@ def main(argv=None):
         run_inspect.isolate_environment(args, root)
         from behavior_inspect import build_task
         from inspect_ai import eval as inspect_eval
-        from inspect_ai.model import ModelCost
         from inspect_task import bundle_hash, skill_files
 
         task = build_task(args)
-        rate = max(args.input_price, args.output_price)
-        prices = {
-            args.model: ModelCost(
-                input=args.input_price,
-                output=args.output_price,
-                input_cache_read=rate,
-                input_cache_write=rate,
-            )
-        }
-        attempted = True
+        prices = run_inspect.pricing_config(args)
 
         def wall_expired(signum, frame):
             raise TimeoutError("outer evaluation timeout")
@@ -195,36 +178,40 @@ def main(argv=None):
         old_handler = signal.signal(signal.SIGALRM, wall_expired)
         signal.alarm(args.wall_timeout)
         try:
-            logs = inspect_eval(
-                task,
-                model=args.model,
-                log_dir=str(root / "inspect"),
-                log_samples=True,
-                sandbox_prebuilt=True,
-                sandbox_cleanup=True,
-                max_samples=1,
-                max_sandboxes=1,
-                max_tasks=1,
-                max_connections=1,
-                parallel_tool_calls=False,
-                max_retries=0,
-                retry_on_error=0,
-                task_retry_attempts=0,
-                fail_on_error=True,
-                score_on_error=False,
-                max_tokens=args.max_tokens,
-                timeout=args.time_limit,
-                cost_limit=args.budget_usd,
-                model_cost_config=prices,
-                display="plain",
-                log_model_api=False,
-                ctl_server=False,
-            )
+            with run_inspect.azure_credential_log_guard(args):
+                run_inspect.preflight_default_credentials(args)
+                attempted = True
+                logs = inspect_eval(
+                    task,
+                    model=args.model,
+                    model_args=run_inspect.model_args(args),
+                    log_dir=str(root / "inspect"),
+                    log_samples=True,
+                    sandbox_prebuilt=True,
+                    sandbox_cleanup=True,
+                    max_samples=1,
+                    max_sandboxes=1,
+                    max_tasks=1,
+                    max_connections=1,
+                    parallel_tool_calls=False,
+                    max_retries=0,
+                    retry_on_error=0,
+                    task_retry_attempts=0,
+                    fail_on_error=True,
+                    score_on_error=False,
+                    max_tokens=args.max_tokens,
+                    timeout=args.time_limit,
+                    cost_limit=effective_budget(args),
+                    model_cost_config=prices,
+                    display="plain",
+                    log_model_api=False,
+                    ctl_server=False,
+                )
         finally:
             signal.alarm(0)
             signal.signal(signal.SIGALRM, old_handler)
         problems, usage, score_detail, observations = result_problems(
-            logs, args.case_id, args.budget_usd
+            logs, args.case_id, effective_budget(args), pricing=pricing_configured(args)
         )
         if len(logs) != 1 or not valid_log_location(logs[0].location, root / "inspect"):
             problems.append("missing or unsafe retained Inspect log")
@@ -247,9 +234,10 @@ def main(argv=None):
             "score_detail": score_detail,
             "observations": observations,
             "dataset_sha256": DATASET_SHA256,
+            "corpus_source_sha256": verify_corpus()[4],
             "adapter_hashes": source_hashes,
             "grader_sha256": hashlib.sha256(
-                Path(__file__).with_name("behavior_grader.py").read_bytes()
+                (Path(__file__).parent / "graders" / "behavior_grader.py").read_bytes()
             ).hexdigest(),
             "case_adapter_sha256": hashlib.sha256(
                 Path(__file__).with_name("behavior_cases.py").read_bytes()
@@ -259,10 +247,19 @@ def main(argv=None):
             ).hexdigest(),
             "skill_sha256": task.metadata["skill_sha256"],
             "model": args.model,
+            "model_family": args.model_family,
+            "azure_auth": (args.azure_auth or "api-key")
+            if run_inspect.FOUNDRY_MODEL.fullmatch(args.model)
+            else None,
+            "azure_endpoint": args.azure_endpoint,
+            "azure_api_version": args.azure_api_version,
             "image": args.image,
+            "output_dir": str(root),
             "usage": usage or None,
+            "cost_control": run_inspect.cost_control(args),
             "limits": {
-                "budget_usd": args.budget_usd,
+                "budget_usd": effective_budget(args),
+                "requested_budget_usd": args.budget_usd,
                 "time_seconds": args.time_limit,
                 "wall_timeout_seconds": args.wall_timeout,
                 "tool_timeout_seconds": args.tool_timeout,
@@ -285,6 +282,7 @@ def main(argv=None):
         print(json.dumps(report, indent=2))
         return 0 if not problems else 1
     except Exception as exc:  # noqa: BLE001 - prevent accidental credential disclosure
+        report_written = False
         if created and root is not None:
             try:
                 (root / "report.json").write_text(
@@ -294,6 +292,9 @@ def main(argv=None):
                             "case_id": args.case_id,
                             "trial": args.trial,
                             "reason": type(exc).__name__,
+                            "cost_control": run_inspect.cost_control(args),
+                            "budget_usd": effective_budget(args),
+                            "requested_budget_usd": args.budget_usd,
                             "release": "BLOCKED",
                         },
                         indent=2,
@@ -301,14 +302,20 @@ def main(argv=None):
                     + "\n",
                     encoding="utf-8",
                 )
-            except OSError:
-                pass
+                report_written = True
+            except OSError as report_error:
+                print(
+                    f"could not write diagnostic report: {type(report_error).__name__}",
+                    file=sys.stderr,
+                )
         message = (
             f"controlled corpus trial {'failed' if attempted else 'not run'}: {type(exc).__name__}"
         )
         if not attempted and isinstance(exc, (ValueError, OSError, ImportError)):
             message += f": {exc}"
         print(message, file=sys.stderr)
+        if report_written:
+            print(f"report: {root / 'report.json'}", file=sys.stderr)
         return 2
 
 

@@ -1,0 +1,6 @@
+/evals/corpus.yaml text eol=lf
+/evals/cases/** text eol=lf
+/evals/fixtures/graphs/** text eol=lf
+/evals/fixtures/smoke-scope-search/** text eol=lf
+/evals/scenarios.json text eol=lf
+/evals/corpus.lock.json text eol=lf

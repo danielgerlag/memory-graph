@@ -1,0 +1,8 @@
+# Placeholder only; edit model before use. This file contains no credentials.
+# Select a matching environment variable name, never its secret value.
+schema_version: 1
+runner: controlled
+name: Controlled agent example
+options:
+  model: "<EDIT_MODEL>"
+  credential_env: OPENAI_API_KEY

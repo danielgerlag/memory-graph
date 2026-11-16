@@ -17,16 +17,18 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "evals"))
 import behavior_capture
 import behavior_cases
-import behavior_grader
 import behavior_shared_capture
-import behavior_shared_grader
 import behavior_shared_inspect
-import behavior_special_grader
 import behavior_write_capture
-import behavior_write_grader
 import behavior_write_tool
 import inspect_task
 from controlled_core import STORE_ID
+from graders import (
+    behavior_grader,
+    behavior_shared_grader,
+    behavior_special_grader,
+    behavior_write_grader,
+)
 from inspect_ai.util import ExecResult
 
 SCRIPT = ROOT / "memory-graph/scripts/memory_graph.py"

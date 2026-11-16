@@ -1,0 +1,60 @@
+order: 6
+id: bounded-traversal
+lane: behavior
+category: traversal
+prompts:
+- Follow connects from A for at most two hops.
+fixture:
+  main:
+    directory: fixtures/graphs/bounded-traversal
+    nodes:
+    - alias: A
+      file: b1c5921c-8fc4-49cd-a506-2b800b8f4c2b.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: B
+      file: 0f58acf6-1c21-439f-a57a-895e8299e7f3.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: C
+      file: b741db80-b4b1-4d68-a06e-b4b0b437b253.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: D
+      file: 5bfb74fa-5ca4-4fce-9b42-4efbcab94828.md
+      fields:
+      - label
+      - scope
+      - id
+scope: orchard
+clock: '2026-01-15T12:00:00Z'
+allowed_mutations: []
+forbidden_actions: []
+checks:
+- path: /answer/node_ids
+  op: equals
+  value:
+  - B
+  - C
+- path: /query/depth
+  op: equals
+  value: 2
+controlled:
+  kind: traversal
+  query: A
+  root: A
+  edge: connects
+  depth: 2
+  targets:
+  - B
+  - C
+  facts:
+  - B
+  - C
+  instruction: Do not modify the store.

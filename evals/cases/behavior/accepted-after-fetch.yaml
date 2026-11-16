@@ -1,0 +1,46 @@
+order: 23
+id: accepted-after-fetch
+lane: behavior
+category: publication
+prompts:
+- After the proposal is accepted, fetch and recall it.
+fixture:
+  store:
+    id: shared-workshop
+    mode: read
+    main_ref: commit-base
+    base_ref: commit-base
+    actor_capabilities:
+      read: true
+      propose: false
+      write: false
+    remote_rules: no implicit publication
+    operation_id:
+    allowed_branch_changes: []
+    isolation_profile: managed-single-store
+  remote_main_ref: commit-accepted
+  main:
+    directory: fixtures/graphs/accepted-after-fetch
+    nodes: []
+  accepted_fact:
+    label: wheel is blue
+    scope: workshop
+    id: wheel
+scope: workshop
+clock: '2026-01-15T12:00:00Z'
+allowed_mutations:
+- ref:fetch
+forbidden_actions: []
+checks:
+- path: /publication/main_ref
+  op: equals
+  value: commit-accepted
+- path: /answer/facts
+  op: contains
+  value: wheel is blue
+- path: /answer/commit
+  op: equals
+  value: commit-accepted
+controlled:
+  blocked: No verified remote transport and separate proposal-acceptance actor are available in the
+    controlled sandbox.

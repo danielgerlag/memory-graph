@@ -11,7 +11,8 @@ from behavior_cases import (
     compile_fixture,
     prompt_for,
 )
-from behavior_grader import grade
+from controlled_core import effective_budget
+from graders.behavior_grader import grade
 from inspect_ai import Task
 from inspect_ai.agent import as_solver, react
 from inspect_ai.dataset import Sample
@@ -204,7 +205,7 @@ def build_task(args):
         time_limit=args.time_limit,
         turn_limit=args.turn_limit,
         token_limit=args.token_limit,
-        cost_limit=args.budget_usd,
+        cost_limit=effective_budget(args),
         message_limit=2 * args.tool_limit + 2 * args.turn_limit + 10,
         metadata={
             "dataset_sha256": DATASET_SHA256,

@@ -1,7 +1,8 @@
 # Local scaling measurements
 
-These are engineering observations, **not release certification**. They cover
-one search workload, not writes, traversal, provider access, or agent behavior.
+These are engineering observations, **not release certification**. The
+recorded workloads cover lexical search and bounded traversal, not writes,
+provider access, or agent behavior.
 The runner was not pinned or isolated, and operating-system cache state was
 not controlled. There is no previous-release baseline.
 

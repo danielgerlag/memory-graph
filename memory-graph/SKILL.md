@@ -15,10 +15,22 @@ See `references/recipes.md` for commands and JSON request formats.
 ## Recall
 
 Search narrowly with `find`, inspect matching nodes with `show`, and use
-`neighbors` only when relationships are useful. Apply the requested scope
-throughout. Report uncertainty, disputed claims, evidence, and the returned
-store and main commit when relevant. Expired and superseded nodes do not appear
-in ordinary recall. If validation or access fails, report the error; never
+`neighbors` only when relationships are useful. `find` takes an optional
+positional query, not `--query`; it matches the entire query as a
+case-insensitive substring in labels, aliases, tags, properties, or bodies,
+not source metadata. When the stored wording is unknown, start with one
+distinctive word rather than combining multiple concepts. `show` takes one node
+ID per call. Output is JSON by default; `--json` is a global option, not a
+subcommand option. A scope is a filter, not part of the query: use
+`find QUERY --scope SCOPE` and `show ID --scope SCOPE` when a scope is
+requested. If a query has no matches, try another distinctive term without
+dropping the requested scope. Report uncertainty,
+disputed claims, evidence, and the returned
+store and main commit when relevant. Cite only sources actually recorded in a
+node's `sources` metadata; a node ID or snapshot commit alone is not a source.
+If there are no recorded sources, say so rather than inventing evidence.
+Expired and superseded nodes do not appear in ordinary recall. If validation
+or access fails, report the error; never
 pretend an invalid or unavailable store is empty.
 
 ## Remember or revise

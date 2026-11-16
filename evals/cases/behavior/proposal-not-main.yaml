@@ -1,0 +1,53 @@
+order: 19
+id: proposal-not-main
+lane: behavior
+category: publication
+prompts:
+- Propose adding a note about the blue wheel.
+fixture:
+  store:
+    id: shared-workshop
+    mode: propose
+    main_ref: commit-base
+    base_ref: commit-base
+    actor_capabilities:
+      read: true
+      propose: true
+      write: false
+    remote_rules: review required
+    operation_id: op-propose
+    allowed_branch_changes:
+    - proposal
+    isolation_profile: managed-single-store
+  main:
+    directory: fixtures/graphs/proposal-not-main
+    nodes: []
+  remote_rules: review required
+  operation_id: op-propose
+scope: workshop
+clock: '2026-01-15T12:00:00Z'
+allowed_mutations:
+- proposal:create
+- receipt:create
+forbidden_actions: []
+checks:
+- path: /graph/main/facts/length
+  op: equals
+  value: 0
+- path: /graph/proposal/facts
+  op: contains
+  value:
+    label: wheel is blue
+    scope: workshop
+- path: /publication/state
+  op: equals
+  value: proposed
+- path: /publication/main_ref
+  op: equals
+  value: commit-base
+- path: /recall/node_ids
+  op: equals
+  value: []
+controlled:
+  blocked: Local publication is refused; the hook-free sandbox has no verified remote transport and
+    review-enforcement policy.

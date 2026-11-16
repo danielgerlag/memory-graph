@@ -8,6 +8,7 @@ from behavior_capture import capture_trace
 from behavior_cases import DATASET_SHA256, compile_fixture, prompt_for, retry_request
 from behavior_write_capture import capture_full_snapshot
 from behavior_write_tool import graph_cli
+from controlled_core import effective_budget
 from inspect_ai import Task
 from inspect_ai.agent import as_solver, react
 from inspect_ai.dataset import Sample
@@ -99,7 +100,7 @@ def capture_write_after(tool_timeout):
 @scorer(metrics=[accuracy()])
 def write_score(case_id):
     async def score(state, target):
-        from behavior_grader import grade
+        from graders.behavior_grader import grade
 
         artifacts = state.store.get("behavior_artifacts")
         result = grade(case_id, state.output.completion, artifacts)
@@ -173,7 +174,7 @@ def build_task(args):
         time_limit=args.time_limit,
         turn_limit=args.turn_limit,
         token_limit=args.token_limit,
-        cost_limit=args.budget_usd,
+        cost_limit=effective_budget(args),
         message_limit=2 * args.tool_limit + 2 * args.turn_limit + 10,
         metadata={
             "dataset_sha256": DATASET_SHA256,

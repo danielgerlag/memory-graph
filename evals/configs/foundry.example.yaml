@@ -1,0 +1,30 @@
+# Copy to foundry.local.yaml, then replace each <...> value.
+# Default auth uses your existing Azure login; never put credentials in this file.
+schema_version: 1
+runner: controlled
+name: Microsoft Foundry behavior trial
+options:
+  case_id: scope-search
+  trial: 1
+  model: "openai/azure/<deployment-name>"
+  # If the deployment name is an alias, uncomment and set its underlying model.
+  # model_family: "gpt-4o"
+  azure_auth: default
+  # For API-key authentication, use azure_auth: api-key and set:
+  # credential_env: AZUREAI_OPENAI_API_KEY
+  azure_endpoint: "https://<resource>.openai.azure.com"
+  azure_api_version: "2025-03-01-preview"
+  image: "sha256:<local-image-id>"
+  # Optional: replace both sample USD-per-million prices and set a soft budget.
+  # budget_usd: 1
+  # input_price: 1
+  # output_price: 2
+  time_limit: 120
+  wall_timeout: 180
+  tool_timeout: 15
+  turn_limit: 8
+  tool_limit: 8
+  token_limit: 6000
+  max_tokens: 500
+  cpus: 1
+  memory_mb: 512

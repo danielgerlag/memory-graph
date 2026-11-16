@@ -1,0 +1,17 @@
+order: 59
+id: native-negative-16
+lane: native
+category: activation-negative
+prompts:
+- How many days are in a week?
+fixture:
+  main:
+    facts: []
+    edges: []
+scope: orchard
+clock: '2026-01-15T12:00:00Z'
+should_activate: false
+critical: false
+allowed_mutations: []
+forbidden_actions: []
+checks: []

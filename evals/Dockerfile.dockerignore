@@ -1,0 +1,7 @@
+**
+!memory-graph/
+!memory-graph/pyproject.toml
+!memory-graph/uv.lock
+!evals/
+!evals/Dockerfile
+!evals/Dockerfile.dockerignore

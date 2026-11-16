@@ -1,0 +1,218 @@
+order: 16
+id: aliases-distractors
+lane: behavior
+category: retrieval
+prompts:
+- Find the wind toy.
+fixture:
+  main:
+    directory: fixtures/graphs/aliases-distractors
+    nodes:
+    - alias: kite-1
+      file: 5bfcb778-c48c-4ea3-a951-bc4ca1d9b76d.md
+      fields:
+      - label
+      - scope
+      - id
+      - aliases
+    - alias: d0
+      file: c42742eb-20bb-4939-93fe-af55df130855.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d1
+      file: 540ba9ee-56a9-4399-b2ea-d6fb451ee91e.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d2
+      file: 8f675145-ffda-4dac-8988-7f4d10a33b2d.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d3
+      file: 63fc523b-d798-4cd0-ba1e-3fa74fdb93a9.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d4
+      file: c802e417-294f-464b-a579-7946107ed46a.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d5
+      file: 62b3f605-710d-4973-80e2-6d073a7c2ac9.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d6
+      file: 84a67945-30ce-4d21-87a8-17f53198aff3.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d7
+      file: 9c7a53c7-8f57-41aa-b220-cee8c896eed6.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d8
+      file: 118bd861-c664-4d6d-97e2-3588d073135a.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d9
+      file: 3de88954-53d6-466b-9700-322b1aa62aa9.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d10
+      file: 9a50af71-b04a-421c-baf3-c20607c2a3fd.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d11
+      file: d6f0b3ab-9e6a-464c-9b78-9da4c4562999.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d12
+      file: 40cb0332-71a3-4c93-aaab-ffcb96fa769d.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d13
+      file: c462b45d-c7aa-4f77-b290-25eb7983c067.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d14
+      file: 2be0ca69-e80a-4ac4-a8c4-e210b3aaa579.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d15
+      file: 7073ef4e-d957-4e6d-b33e-1c59c91134b5.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d16
+      file: 2b99a2bb-42c7-4bcc-9bb4-2d1c3fc20067.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d17
+      file: 8020799f-c2a1-498e-aa79-e54a8b2a26b5.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d18
+      file: f065786f-4703-4596-9716-698e5a650c83.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d19
+      file: 8f58a05d-2286-4ab6-b25c-7660a9452748.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d20
+      file: cc127347-3e92-4384-936a-519d15adad95.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d21
+      file: 996fb5ce-6f45-41fc-938f-6ac676f694fd.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d22
+      file: e30304e3-a5c6-470e-8b7f-051f1e18a0b3.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d23
+      file: c52e4a09-dbad-43e0-b55e-e5b582abd3b8.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d24
+      file: 4dff036f-b3f3-4fe8-97f8-4b30b04237a4.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d25
+      file: 796fe7e1-b0b4-4dc1-ab7d-259193c7169b.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d26
+      file: 9200ee86-80e2-493b-8877-06254e561f33.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d27
+      file: 0a9f2e5b-51de-4497-a0d0-31c2f82a4492.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d28
+      file: fa56673e-6fe4-4415-be80-949586d4b425.md
+      fields:
+      - label
+      - scope
+      - id
+    - alias: d29
+      file: 2a96ba02-6b1e-407b-8975-e83336211427.md
+      fields:
+      - label
+      - scope
+      - id
+scope: orchard
+clock: '2026-01-15T12:00:00Z'
+allowed_mutations: []
+forbidden_actions: []
+checks:
+- path: /answer/node_ids
+  op: equals
+  value:
+  - kite-1
+- path: /query/full_body_ids
+  op: subset
+  value:
+  - kite-1
+controlled:
+  kind: alias
+  query: wind toy
+  targets:
+  - kite-1
+  facts:
+  - amber kite
+  instruction: Do not modify the store.

@@ -1,0 +1,17 @@
+order: 45
+id: native-negative-02
+lane: native
+category: activation-negative
+prompts:
+- Explain how a rainbow forms.
+fixture:
+  main:
+    facts: []
+    edges: []
+scope: orchard
+clock: '2026-01-15T12:00:00Z'
+should_activate: false
+critical: false
+allowed_mutations: []
+forbidden_actions: []
+checks: []

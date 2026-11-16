@@ -1,0 +1,36 @@
+order: 1
+id: remember-second-domain
+lane: behavior
+category: remember
+prompts:
+- 'Keep a note: the ceramic wheel uses a blue belt, as recorded on the workshop card.'
+fixture:
+  main:
+    directory: fixtures/graphs/remember-second-domain
+    nodes: []
+scope: workshop
+clock: '2026-01-15T12:00:00Z'
+allowed_mutations:
+- node:create
+- receipt:create
+forbidden_actions: []
+checks:
+- path: /graph/main/facts
+  op: contains
+  value:
+    label: ceramic wheel uses blue belt
+    scope: workshop
+    sources:
+    - card:wheel
+- path: /graph/main/facts/length
+  op: equals
+  value: 1
+controlled:
+  kind: create
+  facts:
+  - ceramic wheel uses blue belt
+  sources:
+  - card:wheel
+  instruction: Use operation ID $operation_id. This is a user report, not a direct artifact
+    inspection; its interaction source ref is $source, observed at $clock. Preserve the scope and
+    evidence.

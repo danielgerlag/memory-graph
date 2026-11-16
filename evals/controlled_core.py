@@ -7,50 +7,125 @@ import json
 import math
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
-FIXTURE = Path(__file__).parent / "fixtures" / "inspect_scope_store.json"
-FIXTURE_SHA256 = "7c35d076635f953a38fe4de6eb2d6a6e5d21c11a91156fc0e514305335cdb35d"
+FIXTURE = Path(__file__).parent / "fixtures" / "smoke-scope-search"
+FIXTURE_SHA256 = "ac68df6fb2ba945652886949211da264bfc9802f479f19f56aaf0c930150c8c1"
 EXPECTED_ID = "71e813da-9a91-478a-911b-e21fa8099a01"
 FORBIDDEN_ID = "71e813da-9a91-478a-911b-e21fa8099a02"
 STORE_ID = "52bd8904-9a68-4391-9c0c-03af22bf2211"
 MUTATIONS = {"create", "update", "apply", "supersede", "link", "unlink", "repair", "revert"}
 READS = {"find", "show", "neighbors", "review", "check", "diagnose"}
+FOUNDRY_MODEL = re.compile(r"openai/azure/[A-Za-z0-9._:-]+")
+FOUNDRY_HOST = re.compile(
+    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\."
+    r"(?:openai\.azure\.com|cognitiveservices\.azure\.com|services\.ai\.azure\.com)"
+)
 
 
 def fixture_files() -> dict[str, str]:
-    raw = FIXTURE.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != FIXTURE_SHA256:
-        raise ValueError("synthetic fixture hash mismatch")
-    data = json.loads(raw)
-    if (
-        not isinstance(data, dict)
-        or set(data) != {"store.json", ".gitignore", f"{EXPECTED_ID}.md", f"{FORBIDDEN_ID}.md"}
-        or not all(isinstance(value, str) for value in data.values())
-    ):
+    if FIXTURE.is_symlink() or not FIXTURE.is_dir():
+        raise ValueError("invalid synthetic fixture directory")
+    paths = sorted(FIXTURE.iterdir())
+    if {path.name for path in paths} != {
+        "store.json",
+        ".gitignore",
+        f"{EXPECTED_ID}.md",
+        f"{FORBIDDEN_ID}.md",
+    } or any(path.is_symlink() or not path.is_file() for path in paths):
         raise ValueError("invalid synthetic fixture")
-    return data
+    digest = hashlib.sha256()
+    files = {}
+    for path in paths:
+        raw = path.read_bytes()
+        digest.update(path.name.encode("utf-8") + b"\0" + hashlib.sha256(raw).digest())
+        files[path.name] = raw.decode("utf-8")
+    if digest.hexdigest() != FIXTURE_SHA256:
+        raise ValueError("synthetic fixture hash mismatch")
+    return files
 
 
 def validate_options(args, env):
     """Reject implicit models, credentials, unpinned images and unbounded runs."""
     if not args.run:
         raise ValueError("live execution requires --run")
-    if not isinstance(args.model, str) or not re.fullmatch(
-        r"(openai|anthropic)/[A-Za-z0-9._:-]+", args.model
-    ):
-        raise ValueError("--model must explicitly name an openai/ or anthropic/ model")
-    expected_env = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}[
-        args.model.split("/", 1)[0]
-    ]
-    if args.credential_env != expected_env or not env.get(expected_env):
-        raise ValueError(f"--credential-env must explicitly select a nonempty {expected_env}")
+    model = args.model
+    foundry = isinstance(model, str) and FOUNDRY_MODEL.fullmatch(model) is not None
+    azure_auth = getattr(args, "azure_auth", None)
+    if foundry:
+        expected_envs = {"AZUREAI_OPENAI_API_KEY", "AZURE_OPENAI_API_KEY"}
+        if azure_auth not in (None, "api-key", "default"):
+            raise ValueError("--azure-auth must be api-key or default")
+        endpoint = getattr(args, "azure_endpoint", None)
+        try:
+            parts = urlsplit(endpoint if isinstance(endpoint, str) else "")
+            valid_endpoint = (
+                parts.scheme == "https"
+                and parts.hostname is not None
+                and FOUNDRY_HOST.fullmatch(parts.hostname) is not None
+                and parts.username is None
+                and parts.password is None
+                and parts.port in (None, 443)
+                and parts.path in ("", "/")
+                and not parts.query
+                and not parts.fragment
+                and "?" not in endpoint
+                and "#" not in endpoint
+            )
+        except ValueError:
+            valid_endpoint = False
+        if not valid_endpoint:
+            raise ValueError("--azure-endpoint must be a standard HTTPS Foundry resource endpoint")
+        version = getattr(args, "azure_api_version", None)
+        if version is not None and (
+            not isinstance(version, str)
+            or re.fullmatch(r"\d{4}-\d{2}-\d{2}(?:-preview)?", version) is None
+        ):
+            raise ValueError("--azure-api-version must be an Azure API version")
+        family = getattr(args, "model_family", None)
+        if family is not None and (
+            not isinstance(family, str) or re.fullmatch(r"[A-Za-z0-9._:-]+", family) is None
+        ):
+            raise ValueError("--model-family must name the underlying model")
+    elif isinstance(model, str) and re.fullmatch(r"(openai|anthropic)/[A-Za-z0-9._:-]+", model):
+        if (
+            getattr(args, "azure_endpoint", None)
+            or getattr(args, "azure_api_version", None)
+            or azure_auth is not None
+            or getattr(args, "model_family", None)
+        ):
+            raise ValueError("Foundry options require an openai/azure/ model")
+        expected_envs = {
+            {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}[model.split("/", 1)[0]]
+        }
+    else:
+        raise ValueError(
+            "--model must explicitly name an openai/, anthropic/, or openai/azure/ model"
+        )
+    if foundry and azure_auth == "default":
+        if args.credential_env is not None and args.credential_env not in expected_envs:
+            raise ValueError("--credential-env is not valid for a Foundry configuration")
+    elif args.credential_env not in expected_envs or not env.get(args.credential_env):
+        names = " or ".join(sorted(expected_envs))
+        raise ValueError(f"--credential-env must explicitly select a nonempty {names}")
     if not isinstance(args.image, str) or not re.fullmatch(
-        r"[A-Za-z0-9][A-Za-z0-9._:/-]*@sha256:[0-9a-f]{64}", args.image
+        r"(?:[A-Za-z0-9][A-Za-z0-9._:/-]*@)?sha256:[0-9a-f]{64}", args.image
     ):
-        raise ValueError("--image must be an immutable image reference ending in @sha256:<digest>")
-    positive = ("budget_usd", "input_price", "output_price", "cpus")
-    for name in positive:
-        value = getattr(args, name)
+        raise ValueError(
+            "--image must be an immutable image ID or reference ending in @sha256:<digest>"
+        )
+    if (getattr(args, "input_price", None) is None) != (
+        getattr(args, "output_price", None) is None
+    ):
+        raise ValueError("--input-price and --output-price must be supplied together")
+    if getattr(args, "budget_usd", None) is not None and not pricing_configured(args):
+        raise ValueError(
+            "--budget-usd requires both prices; omit the budget to run without a dollar cap"
+        )
+    for name in ("budget_usd", "input_price", "output_price", "cpus"):
+        value = getattr(args, name, None)
+        if value is None and name != "cpus":
+            continue
         if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
             raise ValueError(f"--{name.replace('_', '-')} must be a positive finite number")
     caps = {
@@ -78,6 +153,17 @@ def validate_options(args, env):
         raise ValueError("--log-dir is required")
     if args.docker_host and not args.docker_host.startswith("unix:///"):
         raise ValueError("--docker-host must be an explicit unix:/// socket")
+
+
+def pricing_configured(args):
+    return (
+        getattr(args, "input_price", None) is not None
+        and getattr(args, "output_price", None) is not None
+    )
+
+
+def effective_budget(args):
+    return getattr(args, "budget_usd", None) if pricing_configured(args) else None
 
 
 def grade(answer, before, after, calls):

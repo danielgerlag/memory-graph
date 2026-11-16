@@ -1,6 +1,0 @@
-{
-  "store.json": "{\"schema\":1,\"id\":\"52bd8904-9a68-4391-9c0c-03af22bf2211\"}\n",
-  ".gitignore": ".memory-graph/\n",
-  "71e813da-9a91-478a-911b-e21fa8099a01.md": "---\nschema: 1\nid: \"71e813da-9a91-478a-911b-e21fa8099a01\"\nlabel: \"ladder is in shed\"\nkind: \"claim\"\nscope: \"orchard\"\nstatus: \"active\"\ncreated_at: \"2026-01-01T00:00:00Z\"\nupdated_at: \"2026-01-01T00:00:00Z\"\nedges: []\n---\nThe orchard ladder is in the shed.\n",
-  "71e813da-9a91-478a-911b-e21fa8099a02.md": "---\nschema: 1\nid: \"71e813da-9a91-478a-911b-e21fa8099a02\"\nlabel: \"ladder is in lab\"\nkind: \"claim\"\nscope: \"laboratory\"\nstatus: \"active\"\ncreated_at: \"2026-01-01T00:00:00Z\"\nupdated_at: \"2026-01-01T00:00:00Z\"\nedges: []\n---\nThe laboratory ladder is in the lab.\n"
-}
