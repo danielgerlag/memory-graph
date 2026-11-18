@@ -11,7 +11,7 @@ from pathlib import Path
 from behavior_cases import compile_fixture, retry_request
 from controlled_core import MUTATIONS, READS, STORE_ID, command_arguments
 
-from graders.arguments import canonical_option, has_flag, positional_argument
+from graders.arguments import canonical_option, has_flag, positional_argument, verified_help
 
 NODE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.md$")
 
@@ -257,6 +257,8 @@ def grade_write(case_id, answer, artifacts):
                 or not isinstance(action.get("stderr"), str)
             ):
                 raise ValueError("incomplete action trace")
+            if verified_help(action):
+                continue
             args = command_arguments(action["args"])
             if not args:
                 raise ValueError("missing action arguments")

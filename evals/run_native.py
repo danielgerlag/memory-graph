@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in native Copilot CLI evidence collection; activation is currently unverified."""
+"""Opt-in native Copilot activation trials; full native support remains unverified."""
 
 from __future__ import annotations
 
@@ -109,11 +109,24 @@ GIT_ENV = [
     "GIT_COMMITTER_DATE=2026-01-01T00:00:00Z",
 ]
 
+UNPACK_FIXTURE = r"""
+import pathlib, sys, tarfile
+root = pathlib.Path(sys.argv[1])
+with tarfile.open(fileobj=sys.stdin.buffer, mode="r|*") as archive:
+    for member in archive:
+        name = pathlib.PurePosixPath(member.name)
+        if (name.is_absolute() or any(part in ("", ".", "..") for part in member.name.split("/"))
+                or not (member.isdir() or member.isfile())):
+            raise ValueError("invalid fixture archive entry")
+        archive.extract(member, path=root)
+"""
 
-def clean_exec(container, *command):
+
+def clean_exec(container, *command, stdin=False):
     return [
         "docker",
         "exec",
+        *(["-i"] if stdin else []),
         container,
         "/usr/bin/env",
         "-i",
@@ -155,6 +168,7 @@ def environment(root, docker_host, token=None):
     }
     if docker_host:
         env["DOCKER_HOST"] = docker_host
+        env["CONTAINER_HOST"] = docker_host
     if token is not None:
         env["COPILOT_GITHUB_TOKEN"] = token
     return env
@@ -269,7 +283,7 @@ def exec_snapshot(container, env, deadline):
 def initialize(container, archive, env, deadline):
     admin(clean_exec(container, "mkdir", "-p", CONTAINER_WORKSPACE, "/eval/home"), env, deadline)
     admin(
-        ["docker", "cp", "--archive", "-", f"{container}:{CONTAINER_WORKSPACE}"],
+        clean_exec(container, "python3", "-c", UNPACK_FIXTURE, CONTAINER_WORKSPACE, stdin=True),
         env,
         deadline,
         data=archive,
@@ -299,6 +313,8 @@ def host_version(container, env, deadline):
         "PATH=/usr/local/bin:/usr/bin:/bin",
         "HOME=/eval/home",
         "COPILOT_HOME=/eval/home/.copilot",
+        "COPILOT_CACHE_HOME=/cli-tmp/cache",
+        "TMPDIR=/cli-tmp",
         "copilot",
         "--no-auto-update",
         "--version",
@@ -309,8 +325,27 @@ def host_version(container, env, deadline):
 def version_matches(raw, expected):
     text = raw.decode("utf-8").strip()
     return bool(
-        re.search(r"(?<![A-Za-z0-9.])v?" + re.escape(expected) + r"(?![A-Za-z0-9.-])", text)
+        re.search(
+            r"(?<![A-Za-z0-9.])v?" + re.escape(expected) + r"(?=$|[\s,;:!?)\]]|\.(?=\s|$))",
+            text,
+        )
     )
+
+
+def activation_run_status(results):
+    if not results or any(
+        result.get("status") not in {"PASS", "FAIL", "ERROR", "BLOCKED", "NOT RUN"}
+        for result in results
+    ):
+        raise ValueError("invalid native activation trial results")
+    statuses = {result["status"] for result in results}
+    if "ERROR" in statuses:
+        return "ERROR"
+    if "FAIL" in statuses:
+        return "FAIL"
+    if statuses != {"PASS"}:
+        return "BLOCKED"
+    return "PASS"
 
 
 def collect_trial(args, trial, root, env, secret, archive, bundle, deadline):
@@ -322,9 +357,10 @@ def collect_trial(args, trial, root, env, secret, archive, bundle, deadline):
         "expected_activation": trial["should_activate"],
         "critical": trial["critical"],
         "status": "BLOCKED",
+        "assessment": "native skill activation only",
         "sessions": [],
         "artifacts": {},
-        "problems": ["host skill-load event mapping is not validated"],
+        "problems": [],
     }
     container = None
     phase = "container creation"
@@ -412,6 +448,7 @@ def collect_trial(args, trial, root, env, secret, archive, bundle, deadline):
             )
             if captured["outcome"] == "credential-leak":
                 report["problems"].append("credential appeared in a stream; raw streams withheld")
+                report["status"] = "ERROR"
                 report["sessions"].append(run)
                 return report
             run["transcript"] = artifact(directory, f"session-{index}.jsonl", captured["stdout"])
@@ -420,15 +457,11 @@ def collect_trial(args, trial, root, env, secret, archive, bundle, deadline):
                 report["problems"].append(
                     "native session failed, timed out, or output was truncated"
                 )
+                report["status"] = "ERROR"
             if captured["outcome"] != "complete":
                 report["problems"].append("usage and final snapshot unavailable after interruption")
                 report["sessions"].append(run)
                 return report
-            try:
-                run["activation"] = activation_status(args.host_version, captured["stdout"])
-            except (ValueError, UnicodeError, json.JSONDecodeError):
-                run["activation"] = {"status": "ERROR", "reason": "invalid or incomplete JSONL"}
-                report["problems"].append("invalid or incomplete JSONL")
             try:
                 session_events = admin(
                     clean_exec(
@@ -447,6 +480,7 @@ def collect_trial(args, trial, root, env, secret, archive, bundle, deadline):
                     report["problems"].append(
                         "credential appeared in session events; evidence withheld"
                     )
+                    report["status"] = "ERROR"
                     report["sessions"].append(run)
                     return report
                 run["session_events"] = artifact(
@@ -454,14 +488,38 @@ def collect_trial(args, trial, root, env, secret, archive, bundle, deadline):
                 )
                 try:
                     parse_jsonl(session_events)
-                except (ValueError, UnicodeError, json.JSONDecodeError):
+                    run["activation"] = activation_status(
+                        args.host_version,
+                        captured["stdout"],
+                        session_events,
+                        outcome=captured["outcome"],
+                        exit_status=captured["returncode"],
+                        expected_skill=bundle["SKILL.md"],
+                    )
+                except (ValueError, TypeError, UnicodeError, json.JSONDecodeError):
                     run["session_events_status"] = "CAPTURED_INVALID"
-                    report["problems"].append("invalid native session events")
+                    run["activation"] = {
+                        "status": "UNVERIFIED",
+                        "reason": "invalid or incomplete native event evidence",
+                    }
+                    report["problems"].append("invalid or incomplete native event evidence")
+                    report["status"] = "ERROR"
                 else:
-                    run["session_events_status"] = "CAPTURED_UNVERIFIED"
+                    if run["activation"]["status"] == "VERIFIED":
+                        run["session_events_status"] = "CAPTURED_VERIFIED"
+                    else:
+                        run["session_events_status"] = "CAPTURED_UNVERIFIED"
+                        report["problems"].append(
+                            f"skill activation unverified: {run['activation']['reason']}"
+                        )
             except (ValueError, OSError, subprocess.SubprocessError, RuntimeError):
                 run["session_events_status"] = "MISSING_OR_UNSAFE"
+                run["activation"] = {
+                    "status": "UNVERIFIED",
+                    "reason": "native session events are missing or unsafe",
+                }
                 report["problems"].append("missing or unsafe native session events")
+                report["status"] = "ERROR"
             try:
                 usage = admin(
                     clean_exec(
@@ -474,6 +532,7 @@ def collect_trial(args, trial, root, env, secret, archive, bundle, deadline):
                 if secret in usage:
                     run["usage_status"] = "WITHHELD"
                     report["problems"].append("credential appeared in usage; evidence withheld")
+                    report["status"] = "ERROR"
                     report["sessions"].append(run)
                     return report
                 run["usage"] = artifact(directory, f"session-{index}-usage.json", usage)
@@ -484,6 +543,7 @@ def collect_trial(args, trial, root, env, secret, archive, bundle, deadline):
             except (ValueError, OSError, subprocess.SubprocessError, RuntimeError):
                 run["usage_status"] = "MISSING_OR_INVALID"
                 report["problems"].append("missing or invalid usage evidence")
+                report["status"] = "ERROR"
             report["sessions"].append(run)
             if captured["outcome"] != "complete" or captured["returncode"] != 0:
                 break
@@ -501,12 +561,29 @@ def collect_trial(args, trial, root, env, secret, archive, bundle, deadline):
         after_workspace = read_json_bytes(after_workspace_raw)
         if before != after:
             report["problems"].append("store or Git refs changed in the read-only profile")
+            report["status"] = "ERROR"
         if workspace != after_workspace:
             report["problems"].append("workspace files changed in the read-only profile")
+            report["status"] = "ERROR"
         if len(report["sessions"]) != len(trial["prompts"]):
             report["problems"].append("missing sessions")
+            report["status"] = "ERROR"
+        if not report["problems"] and all(
+            session.get("activation", {}).get("status") == "VERIFIED"
+            for session in report["sessions"]
+        ):
+            if len(report["sessions"]) == 1:
+                report["observed_activation"] = report["sessions"][0]["activation"]["detected"]
+            matched = all(
+                session["activation"]["detected"] == trial["should_activate"]
+                for session in report["sessions"]
+            )
+            report["status"] = "PASS" if matched else "FAIL"
+            if not matched:
+                report["problems"].append("skill activation differed from the expected result")
     except (OSError, ValueError, UnicodeError, subprocess.SubprocessError, RuntimeError) as exc:
         report["problems"].append(f"{phase} failed: {type(exc).__name__}")
+        report["status"] = "ERROR"
     finally:
         if container and re.fullmatch(r"[0-9a-f]{64}", container):
             try:
@@ -521,8 +598,10 @@ def collect_trial(args, trial, root, env, secret, archive, bundle, deadline):
                 )
                 if cleanup.returncode:
                     report["problems"].append("container cleanup was not confirmed")
+                    report["status"] = "ERROR"
             except (OSError, subprocess.SubprocessError):
                 report["problems"].append("container cleanup failed")
+                report["status"] = "ERROR"
     return report
 
 
@@ -560,11 +639,25 @@ def main(argv=None):
                 results.append(
                     collect_trial(args, trial, root, env, secret, archive, bundle, deadline)
                 )
+        run_status = activation_run_status(results)
         report = {
-            "status": "BLOCKED",
+            "status": run_status,
+            "assessment": "native skill activation only",
             "native_support": "BLOCKED",
             "release": "BLOCKED",
-            "activation": "UNVERIFIED",
+            "activation": (
+                "VERIFIED"
+                if all(trial["status"] in {"PASS", "FAIL"} for trial in results)
+                else (
+                    "PARTIALLY VERIFIED"
+                    if any(
+                        session.get("activation", {}).get("status") == "VERIFIED"
+                        for trial in results
+                        for session in trial.get("sessions", [])
+                    )
+                    else "UNVERIFIED"
+                )
+            ),
             "dataset_sha256": dataset_hash,
             "corpus_source_sha256": verify_corpus()[4],
             "manifest_sha256": manifest_hash,
@@ -586,7 +679,7 @@ def main(argv=None):
         }
         (root / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(report, indent=2))
-        return 1
+        return 0 if run_status == "PASS" else 1
     except KeyboardInterrupt:
         if created and root is not None:
             (root / "report.json").write_text(

@@ -8,7 +8,7 @@ import re
 from behavior_cases import compile_fixture
 from controlled_core import MUTATIONS, READS, STORE_ID, command_arguments
 
-from graders.arguments import has_flag, positional_argument
+from graders.arguments import has_flag, positional_argument, verified_help
 from graders.behavior_grader import _json, _option
 from graders.behavior_shared_grader import REMOTE, _decode
 from graders.behavior_write_grader import (
@@ -201,6 +201,8 @@ def grade_proposal(case_id, answer, artifacts):
                 or not isinstance(action.get("stderr"), str)
             ):
                 raise ValueError("incomplete action evidence")
+            if verified_help(action):
+                continue
             args = command_arguments(action["args"])
             if not args:
                 raise ValueError("missing action arguments")

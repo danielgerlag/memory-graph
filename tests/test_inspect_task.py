@@ -86,6 +86,24 @@ def evidence():
 
 
 class ControlledCoreTests(unittest.TestCase):
+    def test_candidate_instructions_replace_only_skill_markdown(self):
+        import inspect_task
+
+        original = inspect_task.skill_files()
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            candidate = Path(directory) / "candidate.md"
+            candidate.write_text("candidate instructions\n", encoding="utf-8")
+            with patch.object(inspect_task, "SKILL_INSTRUCTIONS", candidate):
+                overridden = inspect_task.skill_files()
+        self.assertEqual(overridden["SKILL.md"], b"candidate instructions\n")
+        self.assertNotEqual(
+            inspect_task.bundle_hash(original), inspect_task.bundle_hash(overridden)
+        )
+        self.assertEqual(
+            {key: value for key, value in original.items() if key != "SKILL.md"},
+            {key: value for key, value in overridden.items() if key != "SKILL.md"},
+        )
+
     def test_synthetic_fixture_parses_with_current_skill(self):
         sys.path.insert(0, str(ROOT / "memory-graph/scripts"))
         try:
@@ -958,19 +976,25 @@ class InspectApiTests(unittest.IsolatedAsyncioTestCase):
             patch.object(behavior_write_tool, "sandbox", return_value=fake),
             patch.object(behavior_write_tool, "store", return_value=state),
         ):
-            tool = behavior_write_tool.graph_cli(3, 10)
+            tool = behavior_write_tool.graph_cli(6, 10)
             valid = ["--json", "create", "--operation", "test", "--input", "-"]
             self.assertEqual(await tool(valid, "{}"), "{}")
+            self.assertEqual(await tool(["--help"]), "{}")
+            self.assertEqual(await tool(["fetch", "--help"]), "{}")
             with self.assertRaises(ToolError):
                 await tool(["--json", "create", "--operation", "test", "--input", "/private"])
             with self.assertRaises(ToolError):
                 await tool(["--json", "find", "query", "--root", "/other"])
-        self.assertEqual(len(fake.commands), 1)
+            with self.assertRaises(ToolError):
+                await tool(["fetch", "--help", "--root", "/other"])
+        self.assertEqual(len(fake.commands), 3)
         self.assertEqual(fake.commands[0][4:], valid)
+        self.assertEqual(fake.commands[1][4:], ["--help"])
+        self.assertEqual(fake.commands[2][4:], ["fetch", "--help"])
         self.assertEqual(state.data["memory_calls"][0]["args"], valid)
         self.assertEqual(
             [call["status"] for call in state.data["memory_calls"]],
-            ["success", "invalid", "invalid"],
+            ["success", "success", "success", "invalid", "invalid", "invalid"],
         )
 
 

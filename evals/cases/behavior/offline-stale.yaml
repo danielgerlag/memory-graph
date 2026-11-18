@@ -1,9 +1,10 @@
-order: 21
+# Case: The shared remote is unavailable. Recall the last fetched fact while making
+# clear that its remote freshness cannot be confirmed.
 id: offline-stale
-lane: behavior
 category: freshness
 prompts:
-- What is known while the remote is unreachable?
+  - What is known while the remote is unreachable?
+scope: orchard
 fixture:
   store:
     id: shared-orchard
@@ -20,36 +21,32 @@ fixture:
     isolation_profile: managed-single-store
   remote: unreachable
   main:
-    directory: fixtures/graphs/offline-stale
     nodes:
-    - alias: cart
-      file: aa35d0ad-20d5-4d1b-a2fb-df397223c285.md
-      fields:
-      - label
-      - scope
-      - id
-scope: orchard
-clock: '2026-01-15T12:00:00Z'
-allowed_mutations: []
-forbidden_actions: []
-checks:
-- path: /answer/facts
-  op: contains
-  value: cart is red
-- path: /answer/notices
-  op: contains
-  value: stale or unknown freshness
-- path: /publication/remote_confirmed
-  op: equals
-  value: false
+      cart:
+        label: cart is red
+# Controlled trial: expected outcomes and grader selection.
 controlled:
   kind: offline-stale
   query: cart
-  targets:
-  - cart
-  facts:
-  - cart is red
-  notices:
-  - stale or unknown freshness
+  targets: [cart]
+  facts: [cart is red]
+  notices: [stale or unknown freshness]
   instruction: The cached record concerns the cart. The selected store is attached read-only; do not
     modify it. Use notice 'stale or unknown freshness' if remote freshness cannot be established.
+allowed_mutations: []
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks:
+  - path: /answer/facts
+    op: contains
+    value: cart is red
+  - path: /answer/notices
+    op: contains
+    value: stale or unknown freshness
+  - path: /publication/remote_confirmed
+    op: equals
+    value: false
+# Dataset metadata.
+lane: behavior
+clock: '2026-01-15T12:00:00Z'
+order: 21

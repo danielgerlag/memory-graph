@@ -64,10 +64,105 @@ Token and time limits still apply. A configured `budget_usd` requires both
 USD-per-million prices and is a soft limit that can overshoot. Azure may bill
 either way; configure an Azure-side spending cap.
 
-The image recipe was exercised with a synthetic Foundry HTTP endpoint and a
-network-disabled sandbox; **no real Foundry model has been tested**. See the
+Selected controlled trials have run against a Foundry model. They do not
+establish release or native-host support. See the
 [runner reference](docs/reference.md#opt-in-controlled-corpus-trials) for
 requirements and limitations.
+
+## Compare saved runs
+
+For a point-in-time snapshot of the latest saved result per case and trial
+for the current skill:
+
+```sh
+uv run --locked python evals/snapshot.py
+```
+
+The command prints the path of a new, owner-only CSV under `eval-runs/`; it
+never overwrites an earlier snapshot or runs a model. Each corpus case has
+one row per planned trial, including `NOT RUN` and `BLOCKED` cases. The
+`description` column contains the case prompt. Native host support is still
+unverified; a passing behavior trial does not establish release readiness.
+Native rows include expected and observed activation separately.
+
+Only reports matching the current skill, dataset, and corpus hashes are
+eligible. Fresh holdout variants and reports with missing identity metadata
+are not mixed with the pinned corpus. The latest report is selected by file
+modification time, which is not necessarily the execution time. Imported
+evidence is shown separately from controlled and native trials.
+
+The `status` column includes a matching saved offline regrade when available;
+`recorded_status` preserves the original trial result and `result_basis`
+identifies regrading. Existing regrade files identify their source by path and
+version, not a content hash; `regrade_provenance` makes that limitation
+explicit. `evaluator_match` shows whether saved evidence used the current
+evaluation adapter. Blank costs mean unknown, not zero.
+
+For a table of **all** saved historical results instead:
+
+After running evaluations, create a spreadsheet-friendly CSV:
+
+```sh
+uv run --locked python evals/results.py
+```
+
+The command prints the new file's path under `eval-runs/`. Rows include saved
+case/trial results and explicitly mark missing or unrun trials, with status,
+model, usage, failure details, and version hashes. Run it again after new
+trials to create a fresh comparison; existing files are never overwritten.
+
+The exporter finds `report.json` and `*-report.json` under `eval-runs/`. Add
+`--report PATH` for a report with another name, `--root DIRECTORY` for another
+report directory, or `--output FILE` for a new, explicit output path. Symbolic
+links are not followed. It reads saved reports only; it does not run models or
+collect pytest results.
+
+Blank usage or cost means unknown, not zero; a reported cost is an estimate,
+not an Azure bill. `report_status` and
+`release_status` are separate from an individual trial's `status`: an imported
+trial passing does not certify the release. Full native host support remains
+unverified. `report_modified_utc` is the report file's modification time, not
+necessarily the run's start time. Compare the dataset, corpus, and grader
+hashes before treating rows as equivalent; different fixtures or graders can
+make results incomparable. `adapter_sha256` fingerprints the complete
+recorded adapter-hash map. Some older or failed reports lack these fields.
+
+The CSV is created with owner-only permissions where supported. It can contain
+failure details and paths; the gitignored output directory is not an
+access-control boundary. Text that could be interpreted as a spreadsheet
+formula is prefixed with an apostrophe.
+
+## Optimize skill instructions with GEPA
+
+GEPA proposes instruction changes using feedback from the controlled behavior
+runner. This is opt-in and makes billable model calls:
+
+```sh
+uv sync --locked --group eval --group optimize
+uv run --locked --group eval --group optimize python evals/run_gepa.py --run \
+  --config evals/configs/foundry.local.yaml
+```
+
+By default, the search uses at most 18 controlled trials and 3 reflection
+requests. It then runs up to 6 additional trials for the fresh holdout
+comparison. Each trial can make multiple model requests and uses the
+configured trial token and time limits. Reflection requests are limited to
+4,096 output tokens each. Prices are optional, so these limits are **not a
+dollar cap**. Use `--max-trials`, `--max-reflections`,
+`--reflection-max-tokens`, and `--max-seconds` to adjust the search limits.
+
+The optimizer evaluates isolated candidate copies; it never edits the live
+skill or the graders. Runner errors stop the search rather than counting as
+behavior failures. The generated `best.md`, trial reports, and `summary.json`
+are saved under a new `eval-runs/gepa-*/` directory. Review a candidate and
+its safety requirements before applying it.
+
+Training, selection, and holdout cases are disjoint. The holdout is generated
+after selection with fresh randomized vocabulary and is evaluated against both
+the original and selected skill. Its three cases are variants of existing
+development scenarios, not proof of broad generalization. Each runs once per
+skill, so results are noisy. Neither this search nor its holdout establishes
+native activation or unblocks the two publication scenarios.
 
 ## Layout
 
@@ -80,21 +175,38 @@ evals/
   harnesses/             example isolation/runtime profiles
   configs/               combined runner configuration templates
   graders/               independent artifact and imported-evidence graders
+  results.py              export saved trial reports as CSV
   corpus.yaml            dataset metadata and trial count
   corpus.lock.json       pinned source and generated-dataset hashes
   scenarios.json         generated compatibility snapshot, not authoring source
   docs/reference.md      runner commands, evidence format, and release gates
 ```
 
-In a behavior case, `fixture.main.nodes` maps readable aliases to actual
-UUID-named files. `fields` identifies which node fields appear in the legacy
-normalized observation format; it does not change the Markdown node. `checks`
-are predicates for **imported observations**. `controlled` selects an
-allowlisted built-in grader and gives it the expected facts, targets, and
-case-specific instructions. Controlled graders inspect captured files, Git
-refs, and tool calls independently; they do not blindly trust the agent's
-answer. The deliberately malformed fixture is an exception to valid-node
-format.
+Each behavior case starts with its prompt and a readable preview of the
+starting graph. Node names in that preview are aliases; arrows are written as
+`edges` with a label and target alias. Omitted node scopes use the case scope.
+The actual UUID-named Markdown nodes remain in `fixtures/graphs/<case-id>/`.
+The corpus loader checks the preview against those files, so they cannot
+silently disagree. The deliberately malformed fixture is an exception.
+
+The `controlled` section selects an allowlisted grader and summarizes expected
+facts, sources, and targets; it is not the grader's complete rubric. Controlled
+graders also inspect captured files, Git refs, and tool calls independently.
+The main read grader accepts alternate search terms and additional in-scope
+results, and accepts independently verified `show` calls as an alternative to
+`neighbors` for traversal. Traversal answers can name the starting node and
+state a verified relationship instead of listing only its destination.
+Blank strings and empty nested arrays in the source list are treated as no
+source and reported as a schema warning; nonempty sources must match recorded
+evidence. An `unknown` notice on a correctly retrieved, unsourced claim is
+reported as ambiguous rather than treated as a wrong fact; missing or
+incorrect facts still fail. The fetch case grades a single JSON object even
+when surrounded by prose; it reports that schema deviation and does not
+grade the surrounding prose.
+Empty-result cases and some specialized graders still require the specified
+query. The later `checks` section applies only to
+**imported observations**, not controlled trials. Mutation and forbidden-action
+lists describe the case contract.
 
 Expectation files and grader code stay outside the agent's sandbox. YAML does
 not execute commands, and its named graders are not arbitrary plugins.
@@ -104,13 +216,15 @@ not execute commands, and its named graders are not arbitrary plugins.
 | Lane | What it establishes |
 | --- | --- |
 | Controlled Inspect | Opt-in model trial with an explicitly loaded skill and a restricted tool; not native activation. |
-| Native Copilot | Opt-in evidence-capture spike; activation-event interpretation is not yet verified. |
+| Native Copilot | Opt-in activation-only trials for CLI 1.0.110-3; overall native support remains unverified. |
 | Imported evidence | Offline grading of supplied observations and hash-checked artifacts; it cannot establish that attestations are truthful. |
 
-The controlled corpus has 24 behavior cases: 21 have adapters, while
-`proposal-not-main`, `accepted-after-fetch`, and `concurrent-changes` remain
-blocked pending a verified remote and acceptance harness. **No live model or
-provider evaluation is claimed.** See the [runner reference](docs/reference.md)
+The controlled corpus has 24 behavior cases: 22 have adapters, while
+`proposal-not-main` and `concurrent-changes` remain blocked pending a verified
+publication and policy harness. `accepted-after-fetch` uses a separate
+fixture actor to seed an accepted snapshot; it tests fetch and recall, not
+review, merge, or provider permissions. Selected live trials are not a
+complete release evaluation. See the [runner reference](docs/reference.md)
 for requirements, explicit opt-in commands, limits, and evidence formats.
 
 Optional `--agent <file>` and `--harness <file>` flags on the controlled and
@@ -123,9 +237,10 @@ the combined config. Profiles must not contain secrets and cannot authorize
 
 ## Changing a case
 
-Edit its YAML and, if needed, its Markdown fixture. The `order` values are
-unique and contiguous. Aliases map to stable UUIDv4 names derived from the
-case ID and alias. For example, to obtain a filename for a new node:
+Edit the readable YAML preview and its matching Markdown fixture together.
+The `order` values are unique and contiguous. Aliases map to stable UUIDv4
+names derived from the case ID and alias. For example, to obtain a filename
+for a new node:
 
 ```sh
 uv run --locked python -c "from evals.corpus import semantic_id; print(semantic_id('scope-search', 'new-alias') + '.md')"

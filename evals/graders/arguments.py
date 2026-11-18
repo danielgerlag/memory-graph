@@ -2,7 +2,7 @@
 
 import re
 
-from controlled_core import command_arguments
+from controlled_core import command_arguments, is_safe_help
 
 VALUE_OPTIONS = {
     "find": {"--tag", "--kind", "--scope", "--limit"},
@@ -16,6 +16,16 @@ FLAG_OPTIONS = {
     "neighbors": {"--include-unscoped"},
     "review": {"--include-unscoped"},
 }
+
+
+def verified_help(action):
+    return (
+        is_safe_help(action["args"])
+        and action.get("status") == "success"
+        and isinstance(action.get("stdout"), str)
+        and action["stdout"].startswith("usage: memory-graph ")
+        and action.get("stderr") == ""
+    )
 
 
 def canonical_option(command, option):

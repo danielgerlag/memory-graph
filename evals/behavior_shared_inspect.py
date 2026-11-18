@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+import json
+
 from behavior_capture import capture_trace
-from behavior_cases import DATASET_SHA256, compile_fixture, prompt_for
+from behavior_cases import (
+    DATASET_SHA256,
+    acceptance_request,
+    compile_fixture,
+    prompt_for,
+    semantic_id,
+)
 from behavior_shared_capture import (
     OFFLINE_REMOTE,
     REMOTE,
+    capture_fetch_snapshot,
     capture_offline_snapshot,
     capture_shared_snapshot,
 )
@@ -20,12 +29,14 @@ from inspect_ai.solver import solver
 from inspect_ai.util import ComposeConfig, ComposeService, SandboxEnvironmentSpec, sandbox
 from inspect_task import SANDBOX_ENV, SCRIPT, STORE, WORK, bundle_hash, checked_exec, skill_files
 
+ACTOR = f"{WORK}/acceptance-actor"
+
 
 @solver
 def prepare_shared(case_id, expected_bundle_hash, tool_timeout):
     async def solve(state, generate):
         fixture = compile_fixture(case_id)
-        if case_id not in {"shared-read", "offline-stale"}:
+        if case_id not in {"shared-read", "offline-stale", "accepted-after-fetch"}:
             raise ValueError("unsupported shared-store adapter")
         bundle = skill_files()
         if bundle_hash(bundle) != expected_bundle_hash:
@@ -58,6 +69,47 @@ def prepare_shared(case_id, expected_bundle_hash, tool_timeout):
         await checked_exec(
             base + ["commit", "-m", "Synthetic shared fixture"], timeout=tool_timeout
         )
+        base_commit = (
+            await checked_exec(base + ["rev-parse", "refs/heads/main"], timeout=tool_timeout)
+        ).strip()
+        remote_source = STORE
+        if case_id == "accepted-after-fetch":
+            await checked_exec(
+                [
+                    "git",
+                    "-c",
+                    "protocol.file.allow=always",
+                    "clone",
+                    "--no-local",
+                    "--template=",
+                    STORE,
+                    ACTOR,
+                ],
+                timeout=tool_timeout,
+            )
+            operation_id = semantic_id(case_id, "$acceptance")
+            request = json.dumps(acceptance_request(case_id), sort_keys=True)
+            actor_args = ["create", "--operation", operation_id, "--input", "-"]
+            accepted = await sandbox().exec(
+                ["python3", SCRIPT, "--root", ACTOR, *actor_args],
+                input=request,
+                env=SANDBOX_ENV,
+                timeout=tool_timeout,
+                timeout_retry=False,
+            )
+            if not accepted.success:
+                raise RuntimeError("could not prepare the accepted fixture commit")
+            state.store.set(
+                "shared_acceptance",
+                {
+                    "args": actor_args,
+                    "input_text": request,
+                    "status": "success",
+                    "stdout": accepted.stdout,
+                    "stderr": accepted.stderr,
+                },
+            )
+            remote_source = ACTOR
         await checked_exec(
             [
                 "git",
@@ -67,14 +119,15 @@ def prepare_shared(case_id, expected_bundle_hash, tool_timeout):
                 "--bare",
                 "--no-local",
                 "--template=",
-                STORE,
+                remote_source,
                 REMOTE,
             ],
             timeout=tool_timeout,
         )
         await checked_exec(base + ["remote", "add", "origin", REMOTE], timeout=tool_timeout)
+        initial_ref = base_commit if case_id == "accepted-after-fetch" else "refs/heads/main"
         await checked_exec(
-            base + ["fetch", "--no-tags", "origin", "refs/heads/main:refs/remotes/origin/main"],
+            base + ["fetch", "--no-tags", "origin", f"{initial_ref}:refs/remotes/origin/main"],
             timeout=tool_timeout,
         )
         args = ["attach", "--remote", "origin", "--mode", "read"]
@@ -92,6 +145,8 @@ def prepare_shared(case_id, expected_bundle_hash, tool_timeout):
         if case_id == "offline-stale":
             await checked_exec(["mv", REMOTE, OFFLINE_REMOTE], timeout=tool_timeout)
             before = await capture_offline_snapshot(tool_timeout)
+        elif case_id == "accepted-after-fetch":
+            before = await capture_fetch_snapshot(tool_timeout)
         else:
             before = await capture_shared_snapshot(tool_timeout)
         state.store.set("shared_before", before)
@@ -106,19 +161,21 @@ def capture_shared_after(case_id, tool_timeout):
     async def solve(state, generate):
         if case_id == "offline-stale":
             after = await capture_offline_snapshot(tool_timeout)
+        elif case_id == "accepted-after-fetch":
+            after = await capture_fetch_snapshot(tool_timeout)
         elif case_id == "shared-read":
             after = await capture_shared_snapshot(tool_timeout)
         else:
             raise ValueError("unsupported shared-store adapter")
-        state.store.set(
-            "behavior_artifacts",
-            {
-                "before": state.store.get("shared_before"),
-                "after": after,
-                "actions": capture_trace(state),
-                "setup": state.store.get("shared_setup"),
-            },
-        )
+        artifacts = {
+            "before": state.store.get("shared_before"),
+            "after": after,
+            "actions": capture_trace(state),
+            "setup": state.store.get("shared_setup"),
+        }
+        if case_id == "accepted-after-fetch":
+            artifacts["acceptance"] = state.store.get("shared_acceptance")
+        state.store.set("behavior_artifacts", artifacts)
         return state
 
     return solve
@@ -143,7 +200,7 @@ def shared_score(case_id):
 
 def build_task(args):
     compile_fixture(args.case_id)
-    if args.case_id not in {"shared-read", "offline-stale"}:
+    if args.case_id not in {"shared-read", "offline-stale", "accepted-after-fetch"}:
         raise ValueError("unsupported shared-store adapter")
     bundle = skill_files()
     prompt = (

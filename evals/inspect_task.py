@@ -25,6 +25,7 @@ from inspect_ai.util import ComposeConfig, ComposeService, SandboxEnvironmentSpe
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "memory-graph"
+SKILL_INSTRUCTIONS = None
 WORK = "/workspace"
 STORE = f"{WORK}/store"
 SCRIPT = f"{WORK}/skill/scripts/memory_graph.py"
@@ -85,6 +86,10 @@ def skill_files():
         if len(data) > 1024 * 1024:
             raise ValueError(f"oversized skill file: {path}")
         result[path.relative_to(SKILL).as_posix()] = data
+    if SKILL_INSTRUCTIONS is not None:
+        from profiles import _read_profile
+
+        result["SKILL.md"] = _read_profile(SKILL_INSTRUCTIONS).encode("utf-8")
     required = {"SKILL.md", "scripts/memory_graph.py", "assets/node.schema.json"}
     if not required.issubset(result):
         raise ValueError("incomplete skill bundle")

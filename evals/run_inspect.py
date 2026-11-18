@@ -222,6 +222,10 @@ def warn_if_unbudgeted(args):
         )
 
 
+def has_output(sample):
+    return sample.output is not None and bool(sample.output.choices)
+
+
 def usage_summary(sample, *, pricing, budget):
     usages = sample.model_usage
     if not usages or not all(
@@ -323,7 +327,7 @@ def main(argv=None):
                 problems.append("incomplete or unexpected sample identity")
             if sample.error is not None or sample.limit is not None:
                 problems.append("sample error or limit exhaustion")
-            if sample.output is None or sample.output.stop_reason != "stop":
+            if not has_output(sample) or sample.output.stop_reason != "stop":
                 problems.append("missing or truncated model completion")
             if (
                 not sample.scores
@@ -339,6 +343,8 @@ def main(argv=None):
             "status": "PASS" if not problems else "FAIL",
             "problems": problems,
             "lane": "controlled Inspect smoke; explicitly loaded skill",
+            "case_id": task.metadata["case"],
+            "trial": 1,
             "release": "BLOCKED",
             "native_discovery": "NOT RUN",
             "fixture_sha256": FIXTURE_SHA256,
@@ -385,6 +391,15 @@ def main(argv=None):
                     json.dumps(
                         {
                             "status": "ERROR" if attempted else "NOT RUN",
+                            "lane": "controlled Inspect smoke; explicitly loaded skill",
+                            "case_id": "scope-search",
+                            "trial": 1,
+                            "model": args.model,
+                            "image": args.image,
+                            "limits": {
+                                "budget_usd": effective_budget(args),
+                                "tokens": args.token_limit,
+                            },
                             "reason": type(exc).__name__,
                             "cost_control": cost_control(args),
                             "budget_usd": effective_budget(args),

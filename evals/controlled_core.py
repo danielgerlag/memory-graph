@@ -31,6 +31,16 @@ def command_arguments(args):
     return args[index:]
 
 
+def is_safe_help(args):
+    command = command_arguments(args)
+    return command in (
+        ["--help"],
+        ["-h"],
+        ["fetch", "--help"],
+        ["fetch", "-h"],
+    )
+
+
 def fixture_files() -> dict[str, str]:
     if FIXTURE.is_symlink() or not FIXTURE.is_dir():
         raise ValueError("invalid synthetic fixture directory")

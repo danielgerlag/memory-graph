@@ -1,64 +1,55 @@
-order: 8
+# Case: Two witnesses give conflicting descriptions of the same cart. Return both
+# disputed claims and their sources, and make the disagreement clear.
 id: conflicting-evidence
-lane: behavior
 category: conflict
 prompts:
-- Two witnesses disagree about the cart color. What is known?
+  - Two witnesses disagree about the cart color. What is known?
+scope: orchard
 fixture:
   main:
-    directory: fixtures/graphs/conflicting-evidence
     nodes:
-    - alias: red
-      file: fdb1b200-0c6f-4caf-a464-61a5826e97a8.md
-      fields:
-      - label
-      - scope
-      - id
-      - status
-      - sources
-    - alias: green
-      file: d7a840ab-967b-4ece-b12a-7222a59a3160.md
-      fields:
-      - label
-      - scope
-      - id
-      - status
-      - sources
-scope: orchard
-clock: '2026-01-15T12:00:00Z'
-allowed_mutations: []
-forbidden_actions: []
-checks:
-- path: /answer/facts
-  op: contains
-  value: cart is red
-- path: /answer/facts
-  op: contains
-  value: cart is green
-- path: /answer/sources
-  op: contains
-  value: witness:a
-- path: /answer/sources
-  op: contains
-  value: witness:b
-- path: /answer/notices
-  op: contains
-  value: disagreement
-- path: /graph/main/facts/length
-  op: equals
-  value: 2
+      red:
+        label: cart is red
+        status: disputed
+        sources:
+          - witness:a
+      green:
+        label: cart is green
+        status: disputed
+        sources:
+          - witness:b
+# Controlled trial: expected outcomes and grader selection.
 controlled:
   kind: conflict
   query: cart
-  targets:
-  - red
-  - green
-  facts:
-  - cart is red
-  - cart is green
-  sources:
-  - witness:a
-  - witness:b
-  notices:
-  - disagreement
+  targets: [red, green]
+  facts: [cart is red, cart is green]
+  sources: [witness:a, witness:b]
+  notices: [disagreement]
   instruction: Do not modify the store.
+allowed_mutations: []
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks:
+  - path: /answer/facts
+    op: contains
+    value: cart is red
+  - path: /answer/facts
+    op: contains
+    value: cart is green
+  - path: /answer/sources
+    op: contains
+    value: witness:a
+  - path: /answer/sources
+    op: contains
+    value: witness:b
+  - path: /answer/notices
+    op: contains
+    value: disagreement
+  - path: /graph/main/facts/length
+    op: equals
+    value: 2
+# Dataset metadata.
+lane: behavior
+clock: '2026-01-15T12:00:00Z'
+order: 8

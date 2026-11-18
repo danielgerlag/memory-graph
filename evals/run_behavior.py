@@ -24,6 +24,7 @@ ADAPTER_FILES = (
     "corpus.lock.json",
     "profiles.py",
     "behavior_capture.py",
+    "graders/answers.py",
     "graders/arguments.py",
     "graders/behavior_grader.py",
     "behavior_inspect.py",
@@ -62,6 +63,10 @@ def parser():
     )
     p.add_argument("--case-id", help="select exactly one implemented behavior case")
     p.add_argument("--trial", type=int, help="trial number 1, 2, or 3")
+    p.add_argument(
+        "--skill-instructions",
+        help="use a candidate SKILL.md inside the current working directory",
+    )
     return p
 
 
@@ -81,7 +86,10 @@ def result_problems(logs, case_id, budget, *, pricing=True):
         problems.append("incomplete or unexpected sample identity")
     if sample.error is not None or sample.limit is not None:
         problems.append("sample error or limit exhaustion")
-    if sample.output is None or sample.output.stop_reason != "stop":
+    error_message = getattr(sample.error, "message", None)
+    if isinstance(error_message, str) and "APITimeoutError" in error_message:
+        problems.append("model API request timed out")
+    if not run_inspect.has_output(sample) or sample.output.stop_reason != "stop":
         problems.append("missing or truncated model completion")
     if not sample.scores or len(sample.scores) != 1:
         problems.append("missing deterministic score")
@@ -93,7 +101,7 @@ def result_problems(logs, case_id, budget, *, pricing=True):
         metadata = score.metadata
         if not isinstance(metadata, dict) or not isinstance(metadata.get("artifacts"), dict):
             problems.append("missing captured grading artifacts")
-        elif sample.output is None:
+        elif not run_inspect.has_output(sample):
             problems.append("missing model output for captured grading artifacts")
         else:
             checked = grade(case_id, sample.output.completion, metadata["artifacts"])
@@ -141,6 +149,11 @@ def main(argv=None):
     root = None
     created = False
     attempted = False
+    task = None
+    inspect_task_module = None
+    previous_instructions = None
+    source_hashes = {}
+    corpus_digest = None
     try:
         apply_profiles(args, runner="controlled")
         cases = inventory()
@@ -157,6 +170,7 @@ def main(argv=None):
         validate_options(args, os.environ)
         run_inspect.warn_if_unbudgeted(args)
         source_hashes = adapter_hashes()
+        corpus_digest = verify_corpus()[4]
         if not hasattr(signal, "SIGALRM"):
             raise ValueError("the outer wall timeout requires SIGALRM (Unix)")
         root = Path(args.log_dir).resolve()
@@ -165,9 +179,21 @@ def main(argv=None):
         root.mkdir(mode=0o700, parents=True, exist_ok=False)
         created = True
         run_inspect.isolate_environment(args, root)
+        import inspect_task
         from behavior_inspect import build_task
         from inspect_ai import eval as inspect_eval
-        from inspect_task import bundle_hash, skill_files
+
+        inspect_task_module = inspect_task
+        previous_instructions = inspect_task.SKILL_INSTRUCTIONS
+        inspect_task.SKILL_INSTRUCTIONS = None
+        if args.skill_instructions:
+            candidate = Path(args.skill_instructions)
+            if not candidate.resolve(strict=True).is_relative_to(Path.cwd().resolve()):
+                raise ValueError(
+                    "--skill-instructions must be inside the current working directory"
+                )
+            inspect_task.SKILL_INSTRUCTIONS = candidate
+        bundle_hash, skill_files = inspect_task.bundle_hash, inspect_task.skill_files
 
         task = build_task(args)
         prices = run_inspect.pricing_config(args)
@@ -291,6 +317,17 @@ def main(argv=None):
                             "status": "ERROR" if attempted else "NOT RUN",
                             "case_id": args.case_id,
                             "trial": args.trial,
+                            "model": args.model,
+                            "model_family": args.model_family,
+                            "dataset_sha256": DATASET_SHA256,
+                            "corpus_source_sha256": corpus_digest,
+                            "grader_sha256": source_hashes.get("graders/behavior_grader.py"),
+                            "skill_sha256": task.metadata.get("skill_sha256") if task else None,
+                            "image": args.image,
+                            "limits": {
+                                "budget_usd": effective_budget(args),
+                                "tokens": args.token_limit,
+                            },
                             "reason": type(exc).__name__,
                             "cost_control": run_inspect.cost_control(args),
                             "budget_usd": effective_budget(args),
@@ -317,6 +354,9 @@ def main(argv=None):
         if report_written:
             print(f"report: {root / 'report.json'}", file=sys.stderr)
         return 2
+    finally:
+        if inspect_task_module is not None:
+            inspect_task_module.SKILL_INSTRUCTIONS = previous_instructions
 
 
 if __name__ == "__main__":

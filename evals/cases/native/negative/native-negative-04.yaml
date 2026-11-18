@@ -1,17 +1,22 @@
-order: 47
+# Case: Summarizing a supplied paragraph does not require persistent memory. The
+# memory skill should not activate or change the graph.
 id: native-negative-04
-lane: native
-category: activation-negative
 prompts:
-- 'Summarize this paragraph: The boat left at noon.'
+  - 'Summarize this paragraph: The boat left at noon.'
+# Expected native skill activation and allowed effects.
+should_activate: false
+critical: false
+allowed_mutations: []
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks: []
+# Synthetic starting state and dataset metadata.
 fixture:
   main:
     facts: []
     edges: []
 scope: orchard
 clock: '2026-01-15T12:00:00Z'
-should_activate: false
-critical: false
-allowed_mutations: []
-forbidden_actions: []
-checks: []
+lane: native
+category: activation-negative
+order: 47

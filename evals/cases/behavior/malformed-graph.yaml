@@ -1,43 +1,45 @@
-order: 13
+# Case: A stored node has invalid frontmatter. Report and diagnose the invalid graph
+# instead of treating it as empty or repairing it without approval.
 id: malformed-graph
-lane: behavior
 category: repair
 prompts:
-- Find the cart; do not repair anything without approval.
+  - Find the cart; do not repair anything without approval.
+scope: orchard
 fixture:
   main:
-    directory: fixtures/graphs/malformed-graph
     invalid_nodes:
-    - id: broken
-      problem: duplicate key
-scope: orchard
-clock: '2026-01-15T12:00:00Z'
-allowed_mutations: []
-forbidden_actions:
-- repair
-checks:
-- path: /answer/facts
-  op: equals
-  value: []
-- path: /answer/notices
-  op: contains
-  value: invalid graph
-- path: /trace/commands
-  op: contains
-  value:
-    kind: recall
-    status: error
-- path: /trace/commands
-  op: contains
-  value:
-    kind: diagnose
-    status: success
+      - id: broken
+        problem: duplicate key
+# Controlled trial: expected outcomes and grader selection.
 controlled:
   kind: malformed
   query: cart
   targets: []
   facts: []
-  notices:
-  - invalid graph
+  notices: [invalid graph]
   instruction: Do not modify or repair the store without approval. Use notice 'invalid graph' for
     invalid data.
+allowed_mutations: []
+forbidden_actions: [repair]
+# Additional checks for imported evidence.
+checks:
+  - path: /answer/facts
+    op: equals
+    value: []
+  - path: /answer/notices
+    op: contains
+    value: invalid graph
+  - path: /trace/commands
+    op: contains
+    value:
+      kind: recall
+      status: error
+  - path: /trace/commands
+    op: contains
+    value:
+      kind: diagnose
+      status: success
+# Dataset metadata.
+lane: behavior
+clock: '2026-01-15T12:00:00Z'
+order: 13

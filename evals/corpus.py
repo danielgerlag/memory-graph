@@ -38,6 +38,7 @@ KINDS = {
     "correction",
     "shared-read",
     "offline-stale",
+    "accepted-after-fetch",
     "timed-review",
     "timed-read",
     "malformed",
@@ -257,8 +258,6 @@ def _assemble(sources):
                 raise ValueError(f"invalid fixture: {case_id}")
             main = fixture["main"]
             directory = f"fixtures/graphs/{case_id}"
-            if main.get("directory") != directory:
-                raise ValueError(f"invalid fixture directory: {case_id}")
             prefix = directory + "/"
             graph_files = {
                 name[len(prefix) :]: value for name, value in sources if name.startswith(prefix)
@@ -273,7 +272,7 @@ def _assemble(sources):
             if manifest != {"schema": 1, "id": STORE_ID} or type(manifest["schema"]) is not int:
                 raise ValueError(f"invalid fixture store: {case_id}")
             if "invalid_nodes" in main:
-                if set(main) != {"directory", "invalid_nodes"} or set(graph_files) != {
+                if set(main) != {"invalid_nodes"} or set(graph_files) != {
                     ".gitignore",
                     "store.json",
                     f"{semantic_id(case_id, 'broken')}.md",
@@ -287,38 +286,57 @@ def _assemble(sources):
                 }
             else:
                 descriptors = main.get("nodes")
-                if set(main) != {"directory", "nodes"} or not isinstance(descriptors, list):
+                if set(main) != {"nodes"} or not isinstance(descriptors, dict):
                     raise ValueError(f"invalid fixture nodes: {case_id}")
                 ids = {}
                 nodes = {}
                 bodies = {}
                 fields_by_alias = {}
-                for descriptor in descriptors:
-                    if not isinstance(descriptor, dict) or set(descriptor) != {
-                        "alias",
-                        "file",
-                        "fields",
-                    }:
+                for alias, descriptor in descriptors.items():
+                    if not isinstance(descriptor, dict) or set(descriptor) - (
+                        FIELDS - {"id"} | {"edges"}
+                    ):
                         raise ValueError(f"invalid fixture node descriptor: {case_id}")
-                    alias, fields = descriptor["alias"], descriptor["fields"]
                     if (
                         not isinstance(alias, str)
                         or not alias
                         or alias in ids
-                        or not isinstance(fields, list)
-                        or not all(isinstance(x, str) for x in fields)
-                        or len(fields) != len(set(fields))
-                        or not set(fields) <= FIELDS
-                        or not {"id", "label", "scope"} <= set(fields)
+                        or not isinstance(descriptor.get("label"), str)
+                        or not descriptor["label"]
                     ):
                         raise ValueError(f"invalid fixture node fields: {case_id}")
                     node_id = semantic_id(case_id, alias)
                     name = f"{node_id}.md"
-                    if descriptor["file"] != name or name not in graph_files:
+                    if name not in graph_files:
                         raise ValueError(f"missing fixture node {name}")
                     node, body = parse_node(graph_files[name], name)
                     if node.get("id") != node_id:
                         raise ValueError(f"fixture node identity mismatch: {name}")
+                    if node.get("label") != descriptor["label"] or node.get(
+                        "scope"
+                    ) != descriptor.get("scope", doc["scope"]):
+                        raise ValueError(f"fixture node preview differs from Markdown: {case_id}")
+                    for field in FIELDS - {"id", "label", "scope"}:
+                        if field == "body":
+                            actual = body
+                            default = ""
+                        elif field == "sources":
+                            actual = [source["ref"] for source in node.get("sources", [])]
+                            default = []
+                        else:
+                            default = {"status": "active", "kind": "claim", "aliases": []}.get(
+                                field
+                            )
+                            actual = node.get(
+                                "review_after" if field == "review_at" else field, default
+                            )
+                        if actual != descriptor.get(field, default):
+                            raise ValueError(
+                                f"fixture node {field} preview differs from Markdown: {case_id}"
+                            )
+                    fields = ["label", "scope", "id"] + [
+                        field for field in descriptor if field in FIELDS - {"id", "label", "scope"}
+                    ]
                     ids[alias], nodes[alias], bodies[alias], fields_by_alias[alias] = (
                         node_id,
                         node,
@@ -346,12 +364,14 @@ def _assemble(sources):
                         else:
                             fact[field] = node[field]
                     facts.append(fact)
+                    actual_edges = []
                     for edge in node["edges"]:
                         if set(edge) != {"label", "to"} or edge["to"] not in reverse:
                             raise ValueError(f"invalid fixture edge: {case_id}")
-                        edges.append(
-                            {"from": alias, "label": edge["label"], "to": reverse[edge["to"]]}
-                        )
+                        actual_edges.append({"label": edge["label"], "to": reverse[edge["to"]]})
+                        edges.append({"from": alias, **actual_edges[-1]})
+                    if actual_edges != descriptors[alias].get("edges", []):
+                        raise ValueError(f"fixture edge preview differs from Markdown: {case_id}")
                 fixture["main"] = {"facts": facts, "edges": edges}
                 fixtures[case_id] = {"files": graph_files, "ids": ids, "nodes": nodes}
             if case_id in specs:
@@ -360,6 +380,23 @@ def _assemble(sources):
                 )
         elif controlled is not None:
             raise ValueError(f"native case cannot define a controlled adapter: {case_id}")
+        keys = (
+            "id",
+            "lane",
+            "category",
+            "prompts",
+            "fixture",
+            "scope",
+            "clock",
+            *(("should_activate", "critical") if lane == "native" else ()),
+            "allowed_mutations",
+            "forbidden_actions",
+            "checks",
+        )
+        doc = {
+            **{key: doc[key] for key in keys if key in doc},
+            **{key: value for key, value in doc.items() if key not in keys},
+        }
         entries.append((order, doc))
         used.add(path)
     if {name for name, _ in sources} != used:

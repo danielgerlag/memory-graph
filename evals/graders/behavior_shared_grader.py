@@ -9,7 +9,7 @@ import re
 from behavior_cases import compile_fixture
 from controlled_core import MUTATIONS, READS, STORE_ID, command_arguments
 
-from graders.arguments import has_flag, positional_argument
+from graders.arguments import has_flag, positional_argument, verified_help
 from graders.behavior_grader import _fixture_matches_corpus, _json, _option
 
 REMOTE = "/workspace/remote.git"
@@ -125,6 +125,8 @@ def grade_shared(case_id, answer, artifacts):
                 or not isinstance(action.get("stderr"), str)
             ):
                 raise ValueError("incomplete action evidence")
+            if verified_help(action):
+                continue
             args = command_arguments(action["args"])
             if not args:
                 raise ValueError("missing action arguments")

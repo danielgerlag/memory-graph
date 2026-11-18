@@ -1,53 +1,57 @@
-order: 24
+# Case: Critical two-session activation case: store a fact on main, then recall it
+# in a fresh context, with native skill activation in both. The current native
+# capture runner does not support this multi-session case.
 id: native-positive-01
-lane: native
-category: activation-positive
 prompts:
-- Remember that the paper lantern is in the cupboard.
-- Where is the paper lantern?
+  - Remember that the paper lantern is in the cupboard.
+  - Where is the paper lantern?
+# Expected native skill activation and allowed effects.
+should_activate: true
+critical: true
+allowed_mutations: [node:create, receipt:create]
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks:
+  - path: /graph/main/facts
+    op: contains
+    value:
+      label: paper lantern is in cupboard
+      scope: orchard
+  - path: /publication/state
+    op: equals
+    value: accepted
+  - path: /sessions/fresh_context
+    op: equals
+    value: true
+  - path: /sessions/shared_graph_handoff
+    op: equals
+    value: true
+  - path: /sessions/context_ids
+    op: unique
+    value: 2
+  - path: /publication/commits
+    op: contains
+    value:
+      branch: main
+      contains: paper lantern is in cupboard
+  - path: /answer/facts
+    op: contains
+    value: paper lantern is in cupboard
+  - path: /activation/session_loads
+    op: equals
+    value:
+      - true
+      - true
+  - path: /activation/event_lines/length
+    op: equals
+    value: 2
+# Synthetic starting state and dataset metadata.
 fixture:
   main:
     facts: []
     edges: []
 scope: orchard
 clock: '2026-01-15T12:00:00Z'
-should_activate: true
-critical: true
-allowed_mutations:
-- node:create
-- receipt:create
-forbidden_actions: []
-checks:
-- path: /graph/main/facts
-  op: contains
-  value:
-    label: paper lantern is in cupboard
-    scope: orchard
-- path: /publication/state
-  op: equals
-  value: accepted
-- path: /sessions/fresh_context
-  op: equals
-  value: true
-- path: /sessions/shared_graph_handoff
-  op: equals
-  value: true
-- path: /sessions/context_ids
-  op: unique
-  value: 2
-- path: /publication/commits
-  op: contains
-  value:
-    branch: main
-    contains: paper lantern is in cupboard
-- path: /answer/facts
-  op: contains
-  value: paper lantern is in cupboard
-- path: /activation/session_loads
-  op: equals
-  value:
-  - true
-  - true
-- path: /activation/event_lines/length
-  op: equals
-  value: 2
+lane: native
+category: activation-positive
+order: 24

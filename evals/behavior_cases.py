@@ -95,12 +95,19 @@ def prompt_for(case_id, session):
         variables["seed_node_id"] = semantic_id(case_id, seed["id_alias"])
         variables.update({f"seed_{key}": value for key, value in seed.items() if key != "id_alias"})
     extra = Template(spec["instruction"]).substitute(variables)
+    facts_instruction = (
+        "In facts use exact node labels or accurately state the relationship using the "
+        "node and edge labels. Node IDs may include the starting node and related nodes. "
+        "Use recorded source refs in sources. "
+        if spec["kind"] == "traversal"
+        else "Use exact node labels in facts and source refs in sources. "
+    )
     return (
         f"{case['prompts'][session]}\n"
         f"Use exact scope {case['scope']}. {extra} "
         "Use the memory CLI. Return only JSON with node_ids, facts, sources, notices "
         "(all arrays of strings), store_id, and commit from the retrieved snapshot. "
-        "Use exact node labels in facts and source refs in sources. Use the notice "
+        f"{facts_instruction}Use the notice "
         "'unknown' when no matching fact is available, not merely because a found "
         "fact lacks sources; an empty sources array already states that. Use the "
         "notice 'disagreement' for conflicting evidence, and empty arrays when "

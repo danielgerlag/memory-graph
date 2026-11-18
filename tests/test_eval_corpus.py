@@ -20,10 +20,8 @@ class CorpusTests(unittest.TestCase):
         self.assertEqual(corpus.dataset_bytes(data), corpus.DATASET.read_bytes())
         imported.validate_dataset(data)
         self.assertEqual(len(data["cases"]), 64)
-        self.assertEqual(len(supported), 21)
-        self.assertEqual(
-            set(blocked), {"proposal-not-main", "accepted-after-fetch", "concurrent-changes"}
-        )
+        self.assertEqual(len(supported), 22)
+        self.assertEqual(set(blocked), {"proposal-not-main", "concurrent-changes"})
         self.assertEqual(len(fixtures), 24)
         scope_case = next(case for case in data["cases"] if case["id"] == "scope-search")
         self.assertEqual(scope_case["fixture"]["main"]["facts"][0]["label"], "ladder is in shed")
@@ -45,7 +43,7 @@ class CorpusTests(unittest.TestCase):
                 node = next((root / "fixtures/graphs/scope-search").glob("*.md"))
                 original = node.read_bytes()
                 node.write_bytes(original + b"changed")
-                with self.assertRaisesRegex(ValueError, "corpus source or snapshot changed"):
+                with self.assertRaisesRegex(ValueError, "body preview differs from Markdown"):
                     corpus.verify_corpus()
                 node.write_bytes(original)
                 case = root / "cases/behavior/scope-search.yaml"
@@ -72,6 +70,60 @@ class CorpusTests(unittest.TestCase):
                 self.assertRaisesRegex(ValueError, "invalid controlled specification"),
             ):
                 corpus.compile_corpus()
+
+    def test_graph_preview_cannot_disagree_with_markdown(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            shutil.copytree(corpus.ROOT / "cases", root / "cases")
+            shutil.copytree(corpus.ROOT / "fixtures" / "graphs", root / "fixtures" / "graphs")
+            shutil.copyfile(corpus.ROOT / "corpus.yaml", root / "corpus.yaml")
+            case = root / "cases/behavior/scope-search.yaml"
+            original = case.read_text()
+            case.write_text(original.replace("label: ladder is in shed", "label: different", 1))
+            with (
+                patch.object(corpus, "ROOT", root),
+                self.assertRaisesRegex(ValueError, "preview differs from Markdown"),
+            ):
+                corpus.compile_corpus()
+
+    def test_graph_edge_preview_cannot_disagree_with_markdown(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            shutil.copytree(corpus.ROOT / "cases", root / "cases")
+            shutil.copytree(corpus.ROOT / "fixtures" / "graphs", root / "fixtures" / "graphs")
+            shutil.copyfile(corpus.ROOT / "corpus.yaml", root / "corpus.yaml")
+            case = root / "cases/behavior/directed-traversal.yaml"
+            original = case.read_text()
+            case.write_text(original.replace("label: carries", "label: alters", 1))
+            with (
+                patch.object(corpus, "ROOT", root),
+                self.assertRaisesRegex(ValueError, "edge preview differs from Markdown"),
+            ):
+                corpus.compile_corpus()
+
+    def test_graph_preview_scope_status_and_sources_are_checked(self):
+        examples = (
+            ("scope-search", "scope: laboratory", "scope: different"),
+            ("conflicting-evidence", "status: disputed", "status: active"),
+            ("conflicting-evidence", "- witness:a", "- invented-source"),
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            shutil.copytree(corpus.ROOT / "cases", root / "cases")
+            shutil.copytree(corpus.ROOT / "fixtures" / "graphs", root / "fixtures" / "graphs")
+            shutil.copyfile(corpus.ROOT / "corpus.yaml", root / "corpus.yaml")
+            for case_id, old, new in examples:
+                with self.subTest(case=case_id, field=old):
+                    case = root / "cases/behavior" / f"{case_id}.yaml"
+                    original = case.read_text()
+                    self.assertIn(old, original)
+                    case.write_text(original.replace(old, new, 1))
+                    with (
+                        patch.object(corpus, "ROOT", root),
+                        self.assertRaisesRegex(ValueError, "preview differs from Markdown"),
+                    ):
+                        corpus.compile_corpus()
+                    case.write_text(original)
 
     def test_checked_in_smoke_manifest_still_targets_same_dataset(self):
         manifest = json.loads((corpus.ROOT / "native-smoke.json").read_text())

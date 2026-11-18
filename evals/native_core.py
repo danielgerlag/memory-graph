@@ -8,6 +8,8 @@ import json
 import math
 import re
 import tarfile
+import uuid
+from datetime import datetime
 from pathlib import Path
 
 from corpus import verify_corpus
@@ -21,8 +23,7 @@ STORE_ID = "52bd8904-9a68-4391-9c0c-03af22bf2211"
 AUTH_NAMES = {"COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"}
 DOCUMENTED_BUILD = "1.0.110-3"
 
-# No shape has been verified against a pinned Copilot build.
-VERIFIED_ACTIVATION_ADAPTERS = {}
+VERIFIED_ACTIVATION_ADAPTERS = {"1.0.110-3": "session-skill-invoked-v1"}
 
 
 def _unique_pairs(pairs):
@@ -111,9 +112,9 @@ def validate_options(args, env, trials):
     if len(env[args.credential_env]) < 16:
         raise ValueError("token is too short for safe leak detection")
     if not isinstance(args.image, str) or not re.fullmatch(
-        r"[A-Za-z0-9][A-Za-z0-9._:/-]*@sha256:[0-9a-f]{64}", args.image
+        r"(?:[A-Za-z0-9][A-Za-z0-9._:/-]*@)?sha256:[0-9a-f]{64}", args.image
     ):
-        raise ValueError("image must be an immutable name@sha256 digest")
+        raise ValueError("image must be an immutable image ID or name@sha256 digest")
     if (
         not isinstance(args.model, str)
         or not re.fullmatch(r"[A-Za-z0-9._:-]+", args.model)
@@ -239,6 +240,7 @@ def docker_create(args):
         f"--memory={args.memory_mb}m",
         "--pids-limit=128",
         "--tmpfs=/eval:rw,mode=1777,size=134217728",
+        "--tmpfs=/cli-tmp:rw,exec,mode=1777,size=402653184",
         "--workdir=/eval",
         "--entrypoint=/bin/sh",
         args.image,
@@ -252,11 +254,12 @@ def copilot_command(args, prompt, session):
     wrapper = (
         "import os,sys; "
         "env={'PATH':'/usr/local/bin:/usr/bin:/bin','HOME':'/eval/home',"
-        "'COPILOT_HOME':'/eval/home/.copilot','COPILOT_CACHE_HOME':'/eval/home/cache',"
+        "'COPILOT_HOME':'/eval/home/.copilot','COPILOT_CACHE_HOME':'/cli-tmp/cache',"
+        "'TMPDIR':'/cli-tmp',"
         "'COPILOT_PLUGIN_DIR_ONLY':'true','COPILOT_DISABLE_LOGIN_SHELL_ENV':'true',"
         "'COPILOT_AUTO_UPDATE':'false','COPILOT_TASK_WAIT_TIMEOUT_SECONDS':'5',"
         "'COPILOT_SYSTEM_PROXY':'0','COPILOT_GITHUB_TOKEN':os.environ['COPILOT_GITHUB_TOKEN']}; "
-        "os.execvpe('copilot',sys.argv[1:],env)"
+        "os.execvpe('copilot',['copilot',*sys.argv[1:]],env)"
     )
     return [
         "python3",
@@ -269,6 +272,7 @@ def copilot_command(args, prompt, session):
         "--no-custom-instructions",
         "--no-ask-user",
         "--disable-builtin-mcps",
+        "--disable-client-telemetry",
         "--secret-env-vars=COPILOT_GITHUB_TOKEN",
         "--deny-tool=shell",
         "--deny-tool=write",
@@ -306,14 +310,179 @@ def parse_jsonl(raw):
     return events
 
 
-def activation_status(host_version, raw):
-    """Unknown host event shapes can never produce a positive or negative observation."""
+def _unverified(reason):
+    return {"status": "UNVERIFIED", "reason": reason}
+
+
+def _uuid(value):
+    if not isinstance(value, str):
+        return False
+    try:
+        return str(uuid.UUID(value)) == value
+    except ValueError:
+        return False
+
+
+def _skill_body(value):
+    if not isinstance(value, bytes):
+        raise TypeError("expected skill bytes are required")
+    text = value.decode("utf-8")
+    if not text.startswith("---\n"):
+        raise ValueError("expected skill has no frontmatter")
+    _, delimiter, body = text[4:].partition("\n---\n")
+    body = body.lstrip("\r\n")
+    if not delimiter or not body:
+        raise ValueError("expected skill body is missing")
+    return body
+
+
+def activation_status(
+    host_version,
+    raw,
+    session_events=None,
+    *,
+    outcome=None,
+    exit_status=None,
+    expected_skill=None,
+    skill_name="memory-graph",
+    skill_path=f"{CONTAINER_WORKSPACE}/.github/skills/memory-graph/SKILL.md",
+):
+    """Detect an agent-invoked skill only in a verified, complete host session."""
     events = parse_jsonl(raw)
-    adapter = VERIFIED_ACTIVATION_ADAPTERS.get(host_version)
-    if adapter is None:
-        return {
-            "status": "UNVERIFIED",
-            "reason": "no validated skill-load event mapping",
-            "events": len(events),
-        }
-    raise RuntimeError("no verified activation adapter is implemented")
+    if host_version not in VERIFIED_ACTIVATION_ADAPTERS:
+        return _unverified("no validated skill-load event mapping")
+    if session_events is None or expected_skill is None:
+        return _unverified("complete session events and expected skill are required")
+    if outcome != "complete" or type(exit_status) is not int or exit_status != 0:
+        return _unverified("native process did not complete successfully")
+    persisted = parse_jsonl(session_events)
+    body = _skill_body(expected_skill)
+    if not isinstance(skill_name, str) or not skill_name or not isinstance(skill_path, str):
+        raise ValueError("expected skill name and path are required")
+    expected_path = Path(skill_path)
+    if (
+        not expected_path.is_absolute()
+        or ".." in expected_path.parts
+        or str(expected_path) != skill_path
+    ):
+        raise ValueError("expected skill path must be canonical and absolute")
+    if not all(isinstance(event.get("type"), str) and event["type"] for event in events):
+        return _unverified("native output event type is invalid")
+    results = [event for event in events if event.get("type") == "result"]
+    if (
+        len(results) != 1
+        or events[-1] is not results[0]
+        or type(results[0].get("exitCode")) is not int
+        or results[0]["exitCode"] != 0
+        or not _uuid(results[0].get("sessionId"))
+        or not any(event.get("type") == "assistant.idle" for event in events[:-1])
+        or any(event.get("type") in {"session.error", "abort"} for event in events)
+    ):
+        return _unverified("native output lacks a complete successful session")
+    catalogs = [event for event in events if event.get("type") == "session.skills_loaded"]
+    if not catalogs or not isinstance(catalogs[-1].get("data"), dict):
+        return _unverified("skill discovery evidence is missing")
+    skills = catalogs[-1]["data"].get("skills")
+    if not isinstance(skills, list) or not all(isinstance(item, dict) for item in skills):
+        return _unverified("skill discovery evidence is malformed")
+    matching = [
+        item for item in skills if item.get("name") == skill_name or item.get("path") == skill_path
+    ]
+    if (
+        len(matching) != 1
+        or matching[0].get("name") != skill_name
+        or matching[0].get("path") != skill_path
+        or matching[0].get("source") != "project"
+        or matching[0].get("enabled") is not True
+    ):
+        return _unverified("expected project skill is missing, disabled, or ambiguous")
+    if (
+        persisted[0].get("type") != "session.start"
+        or persisted[-1].get("type") != "session.shutdown"
+        or sum(event.get("type") == "session.start" for event in persisted) != 1
+        or sum(event.get("type") == "session.shutdown" for event in persisted) != 1
+    ):
+        return _unverified("session event log is incomplete")
+    start = persisted[0].get("data")
+    shutdown = persisted[-1].get("data")
+    if (
+        not isinstance(start, dict)
+        or start.get("sessionId") != results[0]["sessionId"]
+        or start.get("copilotVersion") != host_version
+        or start.get("producer") != "copilot-agent"
+        or type(start.get("version")) is not int
+        or start["version"] != 1
+        or not isinstance(shutdown, dict)
+        or shutdown.get("shutdownType") != "routine"
+        or type(shutdown.get("eventsFileSizeBytes")) is not int
+        or shutdown["eventsFileSizeBytes"]
+        != len(session_events) - len(session_events.splitlines(keepends=True)[-1])
+    ):
+        return _unverified("session identity, host version, or log completeness is invalid")
+
+    seen = set()
+    current_turn = None
+    completed_turns = 0
+    matches = []
+    for index, event in enumerate(persisted, 1):
+        event_id, parent = event.get("id"), event.get("parentId")
+        event_type = event.get("type")
+        if not isinstance(event_type, str) or not event_type:
+            return _unverified("session event type is invalid")
+        try:
+            timestamp = datetime.fromisoformat(event.get("timestamp", ""))
+        except (ValueError, TypeError, AttributeError):
+            return _unverified("session event timestamp is invalid")
+        if (
+            not _uuid(event_id)
+            or event_id in seen
+            or (index == 1 and parent is not None)
+            or (index > 1 and (not _uuid(parent) or parent not in seen))
+            or timestamp.utcoffset() is None
+            or (event.get("ephemeral") is not None and event.get("ephemeral") is not False)
+            or event_type in {"session.error", "abort"}
+        ):
+            return _unverified("session event chain is invalid")
+        seen.add(event_id)
+        data = event.get("data")
+        agent_id = event.get("agentId")
+        if agent_id is not None and (not isinstance(agent_id, str) or not agent_id):
+            return _unverified("session agent identity is invalid")
+        if event_type in {"assistant.turn_start", "assistant.turn_end"} and agent_id is None:
+            if not isinstance(data, dict) or not isinstance(data.get("turnId"), str):
+                return _unverified("assistant turn evidence is malformed")
+            if event_type == "assistant.turn_start":
+                if current_turn is not None:
+                    return _unverified("assistant turns overlap")
+                current_turn = data["turnId"]
+            else:
+                if current_turn != data["turnId"]:
+                    return _unverified("assistant turn evidence is incomplete")
+                current_turn = None
+                completed_turns += 1
+        if event_type == "skill.invoked":
+            if not isinstance(data, dict):
+                return _unverified("skill invocation evidence is malformed")
+            if data.get("name") != skill_name and data.get("path") != skill_path:
+                continue
+            if (
+                data.get("name") != skill_name
+                or data.get("path") != skill_path
+                or data.get("source") != "project"
+                or data.get("trigger") != "agent-invoked"
+                or data.get("content") != body
+                or agent_id is not None
+                or current_turn is None
+            ):
+                return _unverified("skill invocation identity or content is ambiguous")
+            matches.append(index)
+    if current_turn is not None or not completed_turns:
+        return _unverified("assistant turn evidence is incomplete")
+    return {
+        "status": "VERIFIED",
+        "detected": bool(matches),
+        "observation_complete": True,
+        "event_lines": matches,
+        "source": "session_events",
+        "events": len(persisted),
+    }

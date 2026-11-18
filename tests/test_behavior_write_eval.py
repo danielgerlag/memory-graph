@@ -632,11 +632,18 @@ class RealLocalGitTests(unittest.TestCase):
             def set(inner, key, value):
                 inner.values[key] = value
 
-        for case_id in ("shared-read", "offline-stale"):
+        for case_id in ("shared-read", "offline-stale", "accepted-after-fetch"):
             with self.subTest(case_id=case_id):
                 workspace = (self.root / case_id).resolve()
                 workspace.mkdir()
                 commands = []
+
+                def restore_transport(folder=workspace):
+                    transport = folder / "store/.memory-graph/transport.git"
+                    if transport.exists():
+                        transport.chmod(0o700)
+
+                self.addCleanup(restore_transport)
 
                 def mapped(value, workspace=workspace):
                     if value == "/workspace" or value.startswith("/workspace/"):
@@ -697,25 +704,179 @@ class RealLocalGitTests(unittest.TestCase):
                     )
                     root = workspace / "store"
                     actions = []
-                    if case_id == "offline-stale":
+                    if case_id == "accepted-after-fetch":
+                        actions.append(self.cli(root, ["fetch", "--help"]))
+                        actions.append(self.cli(root, ["--help"]))
+                        actions.append(self.cli(root, ["find", "wheel", "--scope", "workshop"]))
+                        actions.append(self.cli(root, ["fetch"]))
+                        actions.append(self.cli(root, ["find", "wheel", "--scope", "workshop"]))
+                    elif case_id == "offline-stale":
                         actions.append(self.cli_error(root, ["fetch"]))
-                    actions.append(self.cli(root, ["find", "cart", "--scope", "orchard"]))
+                    if case_id != "accepted-after-fetch":
+                        actions.append(self.cli(root, ["find", "cart", "--scope", "orchard"]))
                     state.store.set("memory_calls", actions)
                     asyncio.run(
                         behavior_shared_inspect.capture_shared_after(case_id, 30)(state, None)
                     )
                 remote = workspace / "remote.git"
                 fixture = behavior_cases.compile_fixture(case_id)
-                answer = self.answer(
-                    fixture["ids"]["cart"],
-                    "cart is red",
-                    state.store.get("shared_before")["remote"]["main"],
-                    notices=["stale or unknown freshness"] if case_id == "offline-stale" else [],
-                )
-                with patch.object(behavior_shared_grader, "REMOTE", str(remote)):
+                if case_id == "accepted-after-fetch":
+                    from graders import behavior_fetch_grader
+
+                    accepted = fixture["case"]["fixture"]["accepted_fact"]
+                    answer = self.answer(
+                        behavior_cases.semantic_id(case_id, accepted["id"]),
+                        accepted["label"],
+                        state.store.get("shared_before")["remote"]["main"],
+                    )
+                    grader = behavior_fetch_grader
+                else:
+                    answer = self.answer(
+                        fixture["ids"]["cart"],
+                        "cart is red",
+                        state.store.get("shared_before")["remote"]["main"],
+                        notices=["stale or unknown freshness"]
+                        if case_id == "offline-stale"
+                        else [],
+                    )
+                    grader = behavior_shared_grader
+                with patch.object(grader, "REMOTE", str(remote)):
                     result = behavior_grader.grade(
                         case_id, answer, state.store.get("behavior_artifacts")
                     )
+                    if case_id == "accepted-after-fetch":
+                        artifacts = state.store.get("behavior_artifacts")
+                        self.assertNotEqual(
+                            artifacts["before"]["tracking"]["commit"],
+                            artifacts["before"]["remote"]["main"],
+                        )
+                        self.assertEqual(
+                            artifacts["after"]["tracking"]["commit"],
+                            artifacts["after"]["remote"]["main"],
+                        )
+                        self.assertEqual(json.loads(actions[2]["stdout"])["results"], [])
+                        tampered = json.loads(json.dumps(artifacts))
+                        tampered["actions"] = [*actions[:3], actions[-1]]
+                        self.assertFalse(
+                            behavior_grader.grade(case_id, answer, tampered)["success"]
+                        )
+                        tampered = json.loads(json.dumps(artifacts))
+                        tampered["actions"][0]["stdout"] = "not valid help"
+                        self.assertFalse(
+                            behavior_grader.grade(case_id, answer, tampered)["success"]
+                        )
+                        retried = json.loads(json.dumps(artifacts))
+                        rejected = {
+                            "args": ["fetch", "--scope", fixture["case"]["scope"]],
+                            "input_text": "",
+                            "status": "invalid",
+                        }
+                        retried["actions"].insert(0, rejected)
+                        self.assertTrue(behavior_grader.grade(case_id, answer, retried)["success"])
+                        rejected["error"] = "timeout"
+                        self.assertFalse(behavior_grader.grade(case_id, answer, retried)["success"])
+                        rejected.pop("error")
+                        rejected["args"] = ["publish", "--scope", fixture["case"]["scope"]]
+                        self.assertFalse(behavior_grader.grade(case_id, answer, retried)["success"])
+                        alternative = json.loads(json.dumps(artifacts))
+                        alternative["actions"][-1] = self.cli(
+                            root,
+                            ["find", accepted["label"].split()[-1], "--scope", accepted["scope"]],
+                        )
+                        self.assertTrue(
+                            behavior_grader.grade(case_id, answer, alternative)["success"]
+                        )
+                        response = json.loads(answer)
+                        response["sources"] = [[]]
+                        result_with_placeholder = behavior_grader.grade(
+                            case_id, json.dumps(response), artifacts
+                        )
+                        self.assertTrue(result_with_placeholder["success"])
+                        self.assertIn(
+                            "empty source placeholder removed; answer schema differs",
+                            result_with_placeholder["observations"],
+                        )
+                        response["sources"] = [["invented"]]
+                        self.assertFalse(
+                            behavior_grader.grade(case_id, json.dumps(response), artifacts)[
+                                "success"
+                            ]
+                        )
+                        response["sources"] = []
+                        response["notices"] = ["unknown"]
+                        result_with_uncertainty = behavior_grader.grade(
+                            case_id, json.dumps(response), artifacts
+                        )
+                        self.assertIn(
+                            "ambiguous unknown notice on an unsourced retrieved claim",
+                            result_with_uncertainty["observations"],
+                        )
+                        self.assertTrue(result_with_uncertainty["success"])
+                        response["facts"] = []
+                        self.assertFalse(
+                            behavior_grader.grade(case_id, json.dumps(response), artifacts)[
+                                "success"
+                            ]
+                        )
+                        wrapped = "Retrieved the matching memory.\n" + answer
+                        result_with_prose = behavior_grader.grade(case_id, wrapped, artifacts)
+                        self.assertTrue(result_with_prose["success"])
+                        self.assertIn(
+                            "text outside JSON was not scored; JSON-only requirement not met",
+                            result_with_prose["observations"],
+                        )
+                        self.assertFalse(
+                            behavior_grader.grade(case_id, wrapped + "\n" + answer, artifacts)[
+                                "success"
+                            ]
+                        )
+                        for key, wrong in (("store_id", "wrong-store"), ("commit", "0" * 40)):
+                            with self.subTest(provenance=key):
+                                response = json.loads(answer)
+                                response[key] = wrong
+                                result_with_wrong_provenance = behavior_grader.grade(
+                                    case_id, json.dumps(response), artifacts
+                                )
+                                self.assertIn(
+                                    f"incorrect final answer: {key}",
+                                    result_with_wrong_provenance["failures"],
+                                )
+                        tampered = json.loads(json.dumps(artifacts))
+                        tampered["acceptance"]["input_text"] = "{}"
+                        self.assertFalse(
+                            behavior_grader.grade(case_id, answer, tampered)["success"]
+                        )
+                        tampered = json.loads(json.dumps(artifacts))
+                        tampered["after"]["remote"]["main"] = tampered["before"]["local"]["main"]
+                        self.assertFalse(
+                            behavior_grader.grade(case_id, answer, tampered)["success"]
+                        )
+                        tampered = json.loads(json.dumps(artifacts))
+                        config_path = ".memory-graph/config.json"
+                        working = tampered["after"]["local"]["working"]
+                        changed_config = json.loads(base64.b64decode(working[config_path]))
+                        changed_config["endpoint_id"] = "0" * 64
+                        raw = json.dumps(changed_config).encode()
+                        working[config_path] = base64.b64encode(raw).decode()
+                        tampered["after"]["local"]["files"][config_path] = hashlib.sha256(
+                            raw
+                        ).hexdigest()
+                        self.assertFalse(
+                            behavior_grader.grade(case_id, answer, tampered)["success"]
+                        )
+                        for forbidden in ("create", "publish"):
+                            tampered = json.loads(json.dumps(artifacts))
+                            tampered["actions"].append(
+                                {
+                                    "args": [forbidden],
+                                    "status": "error",
+                                    "stdout": "",
+                                    "stderr": "",
+                                }
+                            )
+                            self.assertFalse(
+                                behavior_grader.grade(case_id, answer, tampered)["success"]
+                            )
                 self.assertTrue(result["success"], result["failures"])
                 self.assertFalse(any("push" in command for command in commands))
                 hook_dir = workspace / (

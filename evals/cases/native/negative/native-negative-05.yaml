@@ -1,17 +1,22 @@
-order: 48
+# Case: A request to write a haiku is a creative task, not a memory request. The
+# memory skill should not activate or change the graph.
 id: native-negative-05
-lane: native
-category: activation-negative
 prompts:
-- Write a haiku about rain.
+  - Write a haiku about rain.
+# Expected native skill activation and allowed effects.
+should_activate: false
+critical: false
+allowed_mutations: []
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks: []
+# Synthetic starting state and dataset metadata.
 fixture:
   main:
     facts: []
     edges: []
 scope: orchard
 clock: '2026-01-15T12:00:00Z'
-should_activate: false
-critical: false
-allowed_mutations: []
-forbidden_actions: []
-checks: []
+lane: native
+category: activation-negative
+order: 48

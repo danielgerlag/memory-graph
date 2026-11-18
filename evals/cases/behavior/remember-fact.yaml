@@ -1,36 +1,36 @@
-order: 0
+# Case: Store the user's reported fact as one new memory with its interaction source
+# and an operation receipt.
 id: remember-fact
-lane: behavior
 category: remember
 prompts:
-- Remember that the amber kite is stored in the loft; I saw it there.
+  - Remember that the amber kite is stored in the loft; I saw it there.
+scope: orchard
 fixture:
   main:
-    directory: fixtures/graphs/remember-fact
-    nodes: []
-scope: orchard
-clock: '2026-01-15T12:00:00Z'
-allowed_mutations:
-- node:create
-- receipt:create
-forbidden_actions: []
-checks:
-- path: /graph/main/facts
-  op: contains
-  value:
-    label: amber kite stored in loft
-    scope: orchard
-    sources:
-    - interaction:seen
-- path: /graph/main/facts/length
-  op: equals
-  value: 1
+    nodes: {}
+# Controlled trial: expected outcomes and grader selection.
 controlled:
   kind: create
-  facts:
-  - amber kite stored in loft
-  sources:
-  - interaction:seen
+  facts: [amber kite stored in loft]
+  sources: [interaction:seen]
   instruction: Use operation ID $operation_id. This is a user report, not a direct artifact
     inspection; its interaction source ref is $source, observed at $clock. Preserve the scope and
     evidence.
+allowed_mutations: [node:create, receipt:create]
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks:
+  - path: /graph/main/facts
+    op: contains
+    value:
+      label: amber kite stored in loft
+      scope: orchard
+      sources:
+        - interaction:seen
+  - path: /graph/main/facts/length
+    op: equals
+    value: 1
+# Dataset metadata.
+lane: behavior
+clock: '2026-01-15T12:00:00Z'
+order: 0

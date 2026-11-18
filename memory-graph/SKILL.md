@@ -24,14 +24,45 @@ ID per call. Output is JSON by default, so omit `--json`. A scope is a filter,
 not part of the query: use
 `find QUERY --scope SCOPE` and `show ID --scope SCOPE` when a scope is
 requested. If a query has no matches, try another distinctive term without
-dropping the requested scope. Report uncertainty,
+dropping the requested scope. For a relationship question, search for the
+subject node by its label or alias rather than the scope or relationship
+name. Follow its edges with `neighbors ID`, using the requested scope,
+direction, edge label, and hop limit. For a direct outgoing relationship,
+use `--direction out --label LABEL --depth 1`; use incoming or both directions
+only when the question calls for them. Edge labels are exact and
+case-sensitive, and may differ from the user's wording. Discover the stored
+label with `show` or an unfiltered `neighbors` call before filtering; don't
+guess it. If a filtered traversal finds nothing, inspect the subject and
+retry using the observed label without widening scope, direction, or depth.
+The returned neighbor labels describe
+the related nodes; edge destination IDs alone are not facts. If only a
+destination ID is known, `show` that node in the requested scope before
+describing it. Inspect nodes with `show` when their bodies or recorded
+sources are needed.
+Report uncertainty,
 disputed claims, evidence, and the returned
-store and main commit when relevant. Cite only sources actually recorded in a
-node's `sources` metadata; a node ID or snapshot commit alone is not a source.
-If there are no recorded sources, say so rather than inventing evidence.
+store and main commit when relevant. Copy store IDs and commit hashes exactly
+from the same returned snapshot; do not reconstruct or guess them. Cite only
+sources actually recorded in a node's `sources` metadata; a node ID or snapshot
+commit alone is not a source.
+If there are no recorded sources, say so rather than inventing evidence; use
+an empty array when a structured response requests a source list. A retrieved
+claim without sources is still a retrieved claim; report the missing sources
+separately instead of saying the requested fact was not found. When a caller
+requests JSON only, return valid JSON without a preface or placeholder strings
+for empty arrays.
 Expired and superseded nodes do not appear in ordinary recall. If validation
 or access fails, report the error; never
 pretend an invalid or unavailable store is empty.
+
+For an attached remote store, `fetch` refreshes the accepted main snapshot.
+When the user requests newly accepted knowledge, fetch before recall; do not
+treat a prepared proposal as accepted. Never fetch merely because the
+conversation is new or an existing memory is being recalled; fetch only when
+the selected store is known to be attached and a refresh is requested. Run
+`fetch` without scope or other arguments, then apply any requested scope to
+the recall commands. `fetch` and `status` also return JSON by default, so do
+not pass them a `--json` option.
 
 ## Remember or revise
 

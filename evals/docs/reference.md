@@ -1,7 +1,7 @@
 # Evaluation runner and evidence reference
 
-This is evaluation infrastructure. The native runner is an opt-in evidence
-capture spike, **not a verified native-host support adapter**. The offline
+This is evaluation infrastructure. The native runner can score skill
+activation for one validated CLI build, **not full native-host support**. The offline
 report and evidence importer validate the declarative corpus before use. The
 generated `scenarios.json` contains synthetic **development/regression** cases:
 24 behavior cases and 20 positive plus 20 negative activation prompts, with
@@ -163,10 +163,10 @@ uv run --locked python evals/run_behavior.py --inventory
 
 `SUPPORTED` in that inventory means the adapter and deterministic scorer are
 implemented; every case still says **NOT RUN** until actually executed.
-Implementations cover 21 cases, including standalone creates, reuse, lost-ack
+Implementations cover 22 cases, including standalone creates, reuse, lost-ack
 reconciliation, atomic correction, pinned-time reads, malformed-store
-diagnosis, shared read, stale recall, and a tool-bound single-store isolation
-scenario. `--inventory` lists every ID.
+diagnosis, shared read, stale recall, accepted-snapshot fetch, and a tool-bound
+single-store isolation scenario. `--inventory` lists every ID.
 The inventory is implementation coverage, **not evidence that any model
 trial passed**. Provider authorization and arbitrary-host information-flow
 isolation are not claimed.
@@ -226,8 +226,17 @@ endpoint digest as well as local and remote refs and data. Legacy attachments
 without an endpoint digest must be explicitly reattached. The container has no
 network and the model-facing tool is restricted to the `file` protocol.
 
-The following cases are **UNSUPPORTED/BLOCKED**, not passed: `proposal-not-main`,
-`accepted-after-fetch`, and `concurrent-changes`. The hardened runtime refuses
+The `accepted-after-fetch` fixture uses a separate local actor to create an
+accepted commit, then clones that actor's main into a synthetic bare remote.
+The agent starts with the earlier snapshot, must fetch, and is graded against
+the committed remote tree, operation receipt, and tracking refs. No local
+publication or remote ref update is used to prepare the fixture. The actor
+shares the sandbox but is outside the agent's allowed CLI root. This tests
+fetch and recall after an accepted change; it does **not** test review, merge,
+server authorization, or provider branch policies.
+
+The following cases are **UNSUPPORTED/BLOCKED**, not passed: `proposal-not-main`
+and `concurrent-changes`. The hardened runtime refuses
 local publication because server policy cannot be safely enforced. The present
 sandbox has no verified isolated SSH/HTTPS transport with a separately
 authorized acceptance actor or the required review/current-base server policy.
@@ -261,10 +270,9 @@ before/intermediate/after snapshots are recorded and scored. Its corpus
 fixture **already contains the fact**: it tests read-only reuse and fresh
 recall, not creation from an empty store. The two time-boundary cases invoke
 the actual CLI module with only its service clock injected; this does not
-assert that the shipped CLI has a clock-selection flag. No live corpus
-trial has been run; the supplied image was tested with synthetic HTTP only.
-Actual provider and model compatibility remain unverified. Missing artifacts, usage, scoring, or limit
-evidence never pass. Raw evidence is retained in the Inspect log, separate
+assert that the shipped CLI has a clock-selection flag. Selected live Foundry
+trials have been run, but not a complete release evaluation. Missing artifacts,
+usage, scoring, or limit evidence never pass. Raw evidence is retained in the Inspect log, separate
 from the deterministic grader; the operator must control access to that log.
 
 ## Opt-in native Copilot evidence capture
@@ -296,19 +304,21 @@ Copilot process. The runner verifies the copied skill and fixture hashes and
 the requested CLI version before starting the model. Only build `1.0.110-3`,
 the build whose flags were inspected, is selectable. A separate local,
 network-denied skill-list check confirmed discovery on that build, but this
-container runner's authentication, activation, and behavior are unverified.
+container runner's authentication and end-to-end behavior are unverified.
 The host image must be
-trusted, contain no credentials, and be prebuilt locally, referenced by
-immutable digest. It must contain `copilot` and its runtime dependencies,
-`/bin/sh`, `/usr/bin/env`, `sleep`, `mkdir`, Git 2.54 (the tested version) and
-Python 3, plus an existing `/eval` directory for the writable tmpfs. The runtime
-requires Git 2.45 or newer with `--no-lazy-fetch` and `show-ref --exists`;
+trusted, contain no credentials, and be prebuilt locally, referenced by an
+immutable image ID or digest-qualified name. It must contain `copilot` and
+its runtime dependencies, `/bin/sh`, `/usr/bin/env`, `sleep`, `mkdir`, Git 2.54
+(the tested version) and Python 3, plus an existing `/eval` directory for the
+writable tmpfs. The runtime requires Git 2.45 or newer with `--no-lazy-fetch`
+and `show-ref --exists`;
 Git 2.45–2.53 is unverified. Earlier versions are unsupported, including the
 unverified fsmonitor configuration behavior in Git 2.35.2 and earlier.
 No image is built or pulled. There are no host bind mounts or developer HOME
-copies. The container has a read-only root, a 128 MiB writable `/eval` tmpfs,
-UID 1000, dropped capabilities, and explicit memory, CPU, PID, output and
-wall-time limits. It self-terminates after the run deadline; cleanup is
+copies. The container has a read-only root, a 128 MiB non-executable `/eval`
+tmpfs, a separate 384 MiB executable `/cli-tmp` tmpfs for the CLI's runtime
+cache, UID 1000, dropped capabilities, and explicit memory, CPU, PID, output
+and wall-time limits. It self-terminates after the run deadline; cleanup is
 best-effort and should be checked after interruption.
 
 The following is an invocation template; replace the placeholders and supply
@@ -357,17 +367,50 @@ and ref snapshots, workspace file hashes, and SHA-256 artifact metadata in
 oversized, malformed, timed-out, or credential-containing evidence is
 reported rather than counted as success.
 
-**Activation always remains UNVERIFIED/BLOCKED today.** The installed
-documentation does not specify a reliable skill-load event schema or prove
-that absence of an event means non-activation. No answer text, model
-self-report, event name guessed from a transcript, or absence of JSONL events
-is used as activation evidence. A future adapter must validate both positive
-and negative capture against the pinned host version before implementing a
-mapping. Shell/write denial also means this spike cannot establish the
-critical remember-then-recall workflow; behavioral and native support release
-gates remain BLOCKED. The raw output is not automatically converted to the
-separate importer format below. No native Docker or model run has been
-performed; the runner and parser have only offline tests.
+**Activation detection is validated for CLI 1.0.110-3 only.** An isolated,
+network-disabled Linux container ran that exact official CLI build against a
+scripted local model: one session invoked the skill and another did not. The
+detector recognized both, rejected a removed invocation event, and verified
+the current skill body. This validates the event mapping, not a real model's
+skill-selection behavior.
+
+The detector reads `skill.invoked` from the saved session event log, not the
+normal JSON output. It requires the expected project skill name, path and
+content, an agent-initiated invocation, a matching enabled skill catalog,
+matching session IDs and version, complete turns, successful process output,
+and a routine, complete session shutdown. `event_lines` identifies lines in
+the saved **session events** artifact. Missing, truncated, malformed,
+ambiguous, or other-version evidence remains unverified. These checks do not
+authenticate a malicious host or prove that a model was offered every tool.
+See GitHub's [session event reference](https://docs.github.com/en/copilot/how-tos/copilot-sdk/features/streaming-events#skillinvoked).
+
+To repeat the event-mapping check with a trusted local image containing the
+pinned CLI, Python 3, and `/eval` and `/cli-tmp` directories, run:
+
+```sh
+uv run --locked python evals/validate_native_activation.py --run \
+  --image 'sha256:<local-image-id>'
+```
+
+This uses a network-disabled container and a scripted loopback model, with no
+token or provider calls. It exercises the native runner's launcher and
+permissions, checks positive and negative sessions, confirms the skill tool
+was offered and usage was recorded, and removes an invocation event to verify
+that a damaged log cannot be treated as non-activation. Results and input
+hashes are saved to a new `eval-runs/native-activation-probe-*/validation.json`. This
+is a host-event validation, not a corpus trial or a claim that a real model
+will select the skill correctly. The Linux ARM64 probe used the official
+`v1.0.110-3` archive with SHA-256
+`73c7e913b7a815da48264a709a6f343124467ade04ccbba1852d83df5aa3d029`.
+
+Individual native trials report PASS or FAIL for **activation only** when the
+observation is verified. The runner exits 0 only when all selected activation
+trials pass; errors, failures, and unverified or unrun trials do not pass.
+Shell/write denial means this runner cannot establish the critical
+remember-then-recall workflow; full native support and release gates remain
+BLOCKED even when activation trials pass. The raw output is not automatically
+converted to the separate importer format below. No live provider-backed native
+run has been performed.
 
 ## Producing an import
 
@@ -377,8 +420,9 @@ in a fresh, isolated environment, using the supplied fixture, clock, prompts,
 scope and store policy. Multi-session trials must use separate contexts and
 explicitly hand off only the graph. It must extract observations from the
 actual artifacts rather than a model's self-report, record all attempts, and
-preserve the raw files. No such adapter or host event mapping is implemented
-here. The controlled Inspect smoke above is not that adapter and does not
+preserve the raw files. No such importer adapter is implemented here; it does
+not consume or independently validate the native runner's event mapping.
+The controlled Inspect smoke above is not that adapter and does not
 produce this import format. Raw transcripts and artifacts can be sensitive;
 keep them in access-controlled storage and out of version control. Do not
 mount personal stores, home directories, credentials, or unrelated data.
@@ -517,8 +561,9 @@ Therefore imported threshold gates can pass while native support and release
 remain BLOCKED. Paired candidate/baseline comparisons, clustered confidence
 intervals, performance, provider permissions, model-judged qualities, usage
 and cost collection for the **imported release report** are explicitly NOT
-RUN. Verified native activation is also NOT RUN: imported activation
-attestations can be scored, but do not prove host activation. A separate local,
-network-denied Copilot skill-list check confirmed discovery only; it did not
-test activation. The separate opt-in smoke can record its own reported usage
-and cost. No live run is claimed until actually executed.
+RUN. For the imported release report, verified native activation is also NOT
+RUN: imported activation attestations can be scored, but do not prove host
+activation. The native runner's separate activation-only observations do not
+automatically populate this report. The opt-in controlled smoke can record
+its own reported usage and cost. No live run is claimed until actually
+executed.

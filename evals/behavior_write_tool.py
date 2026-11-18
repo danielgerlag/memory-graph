@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from controlled_core import MUTATIONS, READS, command_arguments
+from controlled_core import MUTATIONS, READS, command_arguments, is_safe_help
 from inspect_ai.tool import ToolError, tool
 from inspect_ai.util import sandbox, store
 from inspect_task import SANDBOX_ENV, SCRIPT, STORE
@@ -32,6 +32,7 @@ def graph_cli(
 
         Args:
             args: CLI arguments, optionally starting with --json, then an operation.
+                Global help and fetch help are also available.
             input_text: Optional JSON request for an operation using --input -.
         """
         calls = store().get("memory_calls", [])
@@ -48,7 +49,8 @@ def graph_cli(
             )
             and bool(command_args)
             and (
-                command_args[0] in READS | MUTATIONS
+                is_safe_help(args)
+                or command_args[0] in READS | MUTATIONS
                 or (command_args[0] == "operation" and command_args[1:2] == ["status"])
                 or (local_remote and command_args in (["status"], ["fetch"]))
                 or (local_remote and allow_proposal and command_args[0] == "publish")

@@ -1,17 +1,22 @@
-order: 60
+# Case: Defining a word does not ask for persistent knowledge. The memory skill
+# should not activate or change the graph.
 id: native-negative-17
-lane: native
-category: activation-negative
 prompts:
-- Define the word 'transparent'.
+  - Define the word 'transparent'.
+# Expected native skill activation and allowed effects.
+should_activate: false
+critical: false
+allowed_mutations: []
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks: []
+# Synthetic starting state and dataset metadata.
 fixture:
   main:
     facts: []
     edges: []
 scope: orchard
 clock: '2026-01-15T12:00:00Z'
-should_activate: false
-critical: false
-allowed_mutations: []
-forbidden_actions: []
-checks: []
+lane: native
+category: activation-negative
+order: 60

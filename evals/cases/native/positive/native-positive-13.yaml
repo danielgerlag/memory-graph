@@ -1,19 +1,22 @@
-order: 36
+# Case: A user asks to correct an old stored claim. The native host is expected to
+# activate the memory skill.
 id: native-positive-13
-lane: native
-category: activation-positive
 prompts:
-- 'Correct our old note: the bell is bronze, not copper.'
+  - 'Correct our old note: the bell is bronze, not copper.'
+# Expected native skill activation and allowed effects.
+should_activate: true
+critical: false
+allowed_mutations: [node:create, receipt:create]
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks: []
+# Synthetic starting state and dataset metadata.
 fixture:
   main:
     facts: []
     edges: []
 scope: orchard
 clock: '2026-01-15T12:00:00Z'
-should_activate: true
-critical: false
-allowed_mutations:
-- node:create
-- receipt:create
-forbidden_actions: []
-checks: []
+lane: native
+category: activation-positive
+order: 36

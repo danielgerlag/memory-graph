@@ -1,50 +1,46 @@
-order: 11
+# Case: Follow the orchard gate's outgoing route without crossing into the
+# laboratory scope. Return the in-scope target and do not expose the other
+# one.
 id: scope-traversal
-lane: behavior
 category: scope
 prompts:
-- Follow the route from the orchard gate without crossing scopes.
+  - Follow the route from the orchard gate without crossing scopes.
+scope: orchard
 fixture:
   main:
-    directory: fixtures/graphs/scope-traversal
     nodes:
-    - alias: gate
-      file: 7ba12b43-52ce-402d-9893-573aaaa545f4.md
-      fields:
-      - label
-      - scope
-      - id
-    - alias: tree
-      file: 233643e4-7c01-4802-84d5-8dc786608ba3.md
-      fields:
-      - label
-      - scope
-      - id
-    - alias: bench
-      file: 4e27c8a8-e689-4457-a792-1bafd97f4914.md
-      fields:
-      - label
-      - scope
-      - id
-scope: orchard
-clock: '2026-01-15T12:00:00Z'
-allowed_mutations: []
-forbidden_actions: []
-checks:
-- path: /answer/node_ids
-  op: equals
-  value:
-  - tree
+      gate:
+        label: gate
+        edges:
+          - label: route
+            to: tree
+          - label: route
+            to: bench
+      tree:
+        label: tree
+      bench:
+        label: lab bench
+        scope: laboratory
+# Controlled trial: expected outcomes and grader selection.
 controlled:
   kind: traversal
   query: gate
   root: gate
   edge: route
   depth: 1
-  targets:
-  - tree
-  facts:
-  - tree
-  forbidden:
-  - bench
+  targets: [tree]
+  facts: [tree]
+  forbidden: [bench]
   instruction: Do not modify the store.
+allowed_mutations: []
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks:
+  - path: /answer/node_ids
+    op: equals
+    value:
+      - tree
+# Dataset metadata.
+lane: behavior
+clock: '2026-01-15T12:00:00Z'
+order: 11

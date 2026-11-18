@@ -1,45 +1,39 @@
-order: 10
+# Case: Two scopes contain different ladder memories. Return only the orchard result
+# and do not expose the laboratory result or modify the graph.
 id: scope-search
-lane: behavior
 category: scope
 prompts:
-- In the orchard scope, where is the ladder?
+  - In the orchard scope, where is the ladder?
+scope: orchard
 fixture:
   main:
-    directory: fixtures/graphs/scope-search
     nodes:
-    - alias: orchard-ladder
-      file: 6a98aa3f-89a2-432e-b722-22540a519299.md
-      fields:
-      - label
-      - scope
-      - id
-    - alias: lab-ladder
-      file: 19901361-c596-4fe4-9878-fda3d5c0d1be.md
-      fields:
-      - label
-      - scope
-      - id
-scope: orchard
-clock: '2026-01-15T12:00:00Z'
-allowed_mutations: []
-forbidden_actions: []
-checks:
-- path: /answer/node_ids
-  op: equals
-  value:
-  - orchard-ladder
-- path: /answer/facts
-  op: equals
-  value:
-  - ladder is in shed
+      orchard-ladder:
+        label: ladder is in shed
+      lab-ladder:
+        label: ladder is in lab
+        scope: laboratory
+# Controlled trial: expected outcomes and grader selection.
 controlled:
   kind: find
   query: ladder
-  targets:
-  - orchard-ladder
-  facts:
-  - ladder is in shed
-  forbidden:
-  - lab-ladder
+  targets: [orchard-ladder]
+  facts: [ladder is in shed]
+  forbidden: [lab-ladder]
   instruction: Do not modify the store.
+allowed_mutations: []
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks:
+  - path: /answer/node_ids
+    op: equals
+    value:
+      - orchard-ladder
+  - path: /answer/facts
+    op: equals
+    value:
+      - ladder is in shed
+# Dataset metadata.
+lane: behavior
+clock: '2026-01-15T12:00:00Z'
+order: 10

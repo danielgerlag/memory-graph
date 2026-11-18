@@ -1,50 +1,48 @@
-order: 17
+# Case: Follow a directed edge with an unfamiliar label between unfamiliar node
+# kinds. The skill should handle the vocabulary as graph data, not a built-in
+# list.
 id: novel-vocabulary
-lane: behavior
 category: generality
 prompts:
-- What does the glimmer tram frobulate?
+  - What does the glimmer tram frobulate?
+scope: orchard
 fixture:
   main:
-    directory: fixtures/graphs/novel-vocabulary
     nodes:
-    - alias: g
-      file: 4be46c04-1937-4abf-abc0-aa77b26c5b3c.md
-      fields:
-      - label
-      - scope
-      - id
-      - kind
-    - alias: p
-      file: e0d71412-610d-47a9-baea-f1da1eda8e82.md
-      fields:
-      - label
-      - scope
-      - id
-      - kind
-scope: orchard
-clock: '2026-01-15T12:00:00Z'
-allowed_mutations: []
-forbidden_actions: []
-checks:
-- path: /answer/node_ids
-  op: equals
-  value:
-  - p
-- path: /graph/main/edges
-  op: contains
-  value:
-    from: g
-    label: frobulate
-    to: p
+      g:
+        label: glimmer tram
+        kind: transportation-oddity
+        edges:
+          - label: frobulate
+            to: p
+      p:
+        label: paper moon
+        kind: crafted-satellite
+# Controlled trial: expected outcomes and grader selection.
 controlled:
   kind: traversal
   query: glimmer tram
   root: g
   edge: frobulate
   depth: 1
-  targets:
-  - p
-  facts:
-  - paper moon
+  targets: [p]
+  facts: [paper moon]
   instruction: Do not modify the store.
+allowed_mutations: []
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks:
+  - path: /answer/node_ids
+    op: equals
+    value:
+      - p
+  - path: /graph/main/edges
+    op: contains
+    value:
+      from: g
+      label: frobulate
+      to: p
+# Dataset metadata.
+lane: behavior
+clock: '2026-01-15T12:00:00Z'
+order: 17

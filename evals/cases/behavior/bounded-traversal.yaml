@@ -1,60 +1,53 @@
-order: 6
+# Case: Follow directed connections from A for at most two hops. Return B and C, but
+# not the node beyond the requested depth.
 id: bounded-traversal
-lane: behavior
 category: traversal
 prompts:
-- Follow connects from A for at most two hops.
+  - Follow connects from A for at most two hops.
+scope: orchard
 fixture:
   main:
-    directory: fixtures/graphs/bounded-traversal
     nodes:
-    - alias: A
-      file: b1c5921c-8fc4-49cd-a506-2b800b8f4c2b.md
-      fields:
-      - label
-      - scope
-      - id
-    - alias: B
-      file: 0f58acf6-1c21-439f-a57a-895e8299e7f3.md
-      fields:
-      - label
-      - scope
-      - id
-    - alias: C
-      file: b741db80-b4b1-4d68-a06e-b4b0b437b253.md
-      fields:
-      - label
-      - scope
-      - id
-    - alias: D
-      file: 5bfb74fa-5ca4-4fce-9b42-4efbcab94828.md
-      fields:
-      - label
-      - scope
-      - id
-scope: orchard
-clock: '2026-01-15T12:00:00Z'
-allowed_mutations: []
-forbidden_actions: []
-checks:
-- path: /answer/node_ids
-  op: equals
-  value:
-  - B
-  - C
-- path: /query/depth
-  op: equals
-  value: 2
+      A:
+        label: A
+        edges:
+          - label: connects
+            to: B
+      B:
+        label: B
+        edges:
+          - label: connects
+            to: C
+      C:
+        label: C
+        edges:
+          - label: connects
+            to: D
+      D:
+        label: D
+# Controlled trial: expected outcomes and grader selection.
 controlled:
   kind: traversal
   query: A
   root: A
   edge: connects
   depth: 2
-  targets:
-  - B
-  - C
-  facts:
-  - B
-  - C
+  targets: [B, C]
+  facts: [B, C]
   instruction: Do not modify the store.
+allowed_mutations: []
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks:
+  - path: /answer/node_ids
+    op: equals
+    value:
+      - B
+      - C
+  - path: /query/depth
+    op: equals
+    value: 2
+# Dataset metadata.
+lane: behavior
+clock: '2026-01-15T12:00:00Z'
+order: 6

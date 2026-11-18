@@ -21,6 +21,7 @@ from behavior_cases import (
 from controlled_core import MUTATIONS, READS, STORE_ID, command_arguments
 from corpus import parse_node
 
+from graders.answers import normalize_notices, normalize_sources
 from graders.arguments import canonical_option, has_flag, positional_argument
 
 
@@ -71,6 +72,31 @@ def _provenance(result, commit):
     )
 
 
+def _find_query_matches(positional, result, fixture, aliases):
+    if (
+        not isinstance(positional, str)
+        or not positional.strip()
+        or result.get("query") != positional
+    ):
+        return False
+    if not aliases:
+        return positional.casefold() == fixture["spec"]["query"].casefold()
+    facts = {fact["id"]: fact for fact in fixture["case"]["fixture"]["main"]["facts"]}
+    needle = positional.casefold()
+    for alias in aliases:
+        node = fixture["nodes"][alias]
+        fields = (
+            node["label"],
+            " ".join(node.get("aliases", [])),
+            " ".join(node.get("tags", [])),
+            json.dumps(node.get("properties", {}), ensure_ascii=False, sort_keys=True),
+            facts[alias].get("body", ""),
+        )
+        if not any(needle in field.casefold() for field in fields):
+            return False
+    return True
+
+
 def _distances(fixture):
     spec, nodes, ids = fixture["spec"], fixture["nodes"], fixture["ids"]
     start = spec["root"]
@@ -96,6 +122,74 @@ def _distances(fixture):
     return {
         ids[alias]: (seen[alias], ids[parents[alias]]) for alias in spec["targets"] if alias in seen
     }
+
+
+def _traversal_answer(key, observed, fixture):
+    if not isinstance(observed, list) or not all(isinstance(item, str) for item in observed):
+        return False
+    spec, ids = fixture["spec"], fixture["ids"]
+    distances = _distances(fixture)
+    if len(distances) != len(spec["targets"]):
+        return False
+    if key == "node_ids":
+        required = set(distances)
+        allowed = required | {ids[spec["root"]]} | {via for _, via in distances.values()}
+        return len(set(observed)) == len(observed) and required <= set(observed) <= allowed
+    if len(observed) != len(distances):
+        return False
+
+    nodes = {node["id"]: node for node in fixture["nodes"].values()}
+
+    def fold(text):
+        return " ".join(text.split()).casefold()
+
+    def normalize(text):
+        return fold(text).rstrip(".")
+
+    choices = {}
+    for target, (_, via) in distances.items():
+        source_label, target_label, edge = nodes[via]["label"], nodes[target]["label"], spec["edge"]
+        scope = fixture["case"]["scope"]
+        forms = {target_label, f"{scope} {target_label}"}
+        patterns = []
+        for source in (source_label, f"{scope} {source_label}"):
+            for destination in (target_label, f"{scope} {target_label}"):
+                forms.add(f"{source} {edge} {destination}")
+                if edge.isalpha():
+                    forms.add(f"{source} {edge}s {destination}")
+                source_pattern = re.escape(fold(source))
+                edge_pattern = re.escape(fold(edge))
+                destination_pattern = re.escape(normalize(destination))
+                patterns.append(
+                    re.compile(
+                        rf"{source_pattern}\s*[-=]+\s*{edge_pattern}\s*[-=]+>\s*{destination_pattern}"
+                    )
+                )
+                patterns.append(
+                    re.compile(
+                        rf"{source_pattern}\s*[-=]+>\s*{edge_pattern}\s*[-=]+>\s*{destination_pattern}"
+                    )
+                )
+        choices[target] = ({normalize(form) for form in forms}, patterns)
+
+    assigned = {}
+
+    def match(index, visited):
+        fact = normalize(observed[index])
+        prefix = f"{fold(fixture['case']['scope'])}: "
+        fact = fact.removeprefix(prefix)
+        for target, (forms, patterns) in choices.items():
+            if target in visited or (
+                fact not in forms and not any(pattern.fullmatch(fact) for pattern in patterns)
+            ):
+                continue
+            visited.add(target)
+            if target not in assigned or match(assigned[target], visited):
+                assigned[target] = index
+                return True
+        return False
+
+    return all(match(index, set()) for index in range(len(observed)))
 
 
 def _fixture_matches_corpus(case_id, fixture):
@@ -347,24 +441,21 @@ def _grade(case_id, answer, artifacts, *, check_sessions):
                 else []
             )
             find_evidence |= (
-                isinstance(positional, str)
-                and positional.casefold() == spec["query"].casefold()
-                and isinstance(result.get("query"), str)
-                and result["query"].casefold() == spec["query"].casefold()
+                _find_query_matches(positional, result, fixture, source_aliases)
                 and _option(args, "--scope") == case["scope"]
                 and not has_flag(args, "--include-unscoped")
                 and result.get("truncated") is False
                 and isinstance(rows, list)
-                and len(actual_ids) == len(rows) == len(expected_ids)
+                and len(actual_ids) == len(rows)
                 and all(isinstance(item, str) for item in actual_ids)
-                and set(actual_ids) == expected_ids
+                and len(set(actual_ids)) == len(actual_ids)
+                and (expected_ids.issubset(actual_ids) if expected_ids else not actual_ids)
                 and all(
                     row.get("scope") == case["scope"]
-                    and row.get("label") == nodes[alias]["label"]
-                    and row.get("status") == nodes[alias]["status"]
-                    for alias in source_aliases
+                    and row.get("id") in expected_nodes
+                    and row.get("label") == expected_nodes[row["id"]]["label"]
+                    and row.get("status") == expected_nodes[row["id"]]["status"]
                     for row in rows
-                    if row.get("id") == ids[alias]
                 )
             )
         elif operation == "neighbors" and spec["kind"] == "traversal":
@@ -376,7 +467,7 @@ def _grade(case_id, answer, artifacts, *, check_sessions):
             if (
                 _option(args, "--scope") != case["scope"]
                 or _option(args, "--direction", "both") != "out"
-                or _option(args, "--label") != spec["edge"]
+                or _option(args, "--label") not in (None, spec["edge"])
                 or not isinstance(depth, str)
                 or not depth.isdigit()
                 or not 1 <= int(depth) <= max_depth
@@ -444,11 +535,33 @@ def _grade(case_id, answer, artifacts, *, check_sessions):
                 failures.append("show output does not match the fixture node")
             if spec["kind"] == "alias" and positional not in {ids[a] for a in spec["targets"]}:
                 failures.append("unnecessary full-body retrieval")
-            if _option(args, "--scope") == case["scope"]:
+            if (
+                _option(args, "--scope") == case["scope"]
+                and not has_flag(args, "--include-unscoped")
+                and (spec["kind"] != "traversal" or not has_flag(args, "--include-inactive"))
+            ):
                 shown[positional] = result
 
     if not find_evidence:
         failures.append("missing complete scoped search evidence")
+    if spec["kind"] == "traversal" and not traversal_evidence:
+        distances = _distances(fixture)
+        traversal_evidence = (
+            len(distances) == len(spec["targets"])
+            and bool(distances)
+            and all(
+                target in shown
+                and via in shown
+                and isinstance(shown[via]["node"].get("edges"), list)
+                and any(
+                    isinstance(edge, dict)
+                    and edge.get("to") == target
+                    and edge.get("label") == spec["edge"]
+                    for edge in shown[via]["node"]["edges"]
+                )
+                for target, (_, via) in distances.items()
+            )
+        )
     if spec["kind"] == "traversal" and not traversal_evidence:
         failures.append("missing required directed traversal evidence")
     if spec["kind"] == "hostile":
@@ -492,6 +605,26 @@ def _grade(case_id, answer, artifacts, *, check_sessions):
         for key, value in expected.items():
             observed = parsed[key]
             if isinstance(value, list):
+                if key == "sources":
+                    normalized = normalize_sources(observed)
+                    if normalized is not None:
+                        observed, changed = normalized
+                        if changed:
+                            observations.append(
+                                "empty source placeholder removed; answer schema differs"
+                            )
+                if key == "notices":
+                    observed, changed = normalize_notices(
+                        observed, value, spec.get("sources", []), spec["facts"]
+                    )
+                    if changed:
+                        observations.append(
+                            "ambiguous unknown notice on an unsourced retrieved claim"
+                        )
+                if spec["kind"] == "traversal" and key in {"node_ids", "facts"}:
+                    if not _traversal_answer(key, observed, fixture):
+                        failures.append(f"incorrect final answer: {key}")
+                    continue
                 if spec["kind"] == "isolation" and key == "notices":
                     valid_notices = {
                         "fresh context and separate approval required",

@@ -1,45 +1,39 @@
-order: 9
+# Case: At the fixed evaluation time, exclude the expired schedule from ordinary
+# recall and identify the current schedule as due for review.
 id: expired-review
-lane: behavior
 category: lifecycle
 prompts:
-- What is current, and what needs review?
+  - What is current, and what needs review?
+scope: orchard
 fixture:
   main:
-    directory: fixtures/graphs/expired-review
     nodes:
-    - alias: expired
-      file: 6e659764-4430-48b2-a21e-d5c4477e5a63.md
-      fields:
-      - label
-      - scope
-      - id
-      - expires_at
-    - alias: review
-      file: 720c4267-5aa4-4ee1-b7b3-d07d927becb2.md
-      fields:
-      - label
-      - scope
-      - id
-      - review_at
-scope: orchard
-clock: '2026-01-15T12:00:00Z'
-allowed_mutations: []
-forbidden_actions: []
-checks:
-- path: /answer/node_ids
-  op: equals
-  value:
-  - review
-- path: /answer/notices
-  op: contains
-  value: 'review due: review'
+      expired:
+        label: old schedule
+        expires_at: '2026-01-01T00:00:00Z'
+      review:
+        label: current schedule
+        review_at: '2026-01-10T00:00:00Z'
+# Controlled trial: expected outcomes and grader selection.
 controlled:
   kind: timed-review
   query: schedule
-  targets:
-  - review
-  facts:
-  - current schedule
+  targets: [review]
+  facts: [current schedule]
   instruction: "Treat the evaluation clock as $clock; do not modify the store. For a review-due node,
     use notice 'review due: <node_id>'."
+allowed_mutations: []
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks:
+  - path: /answer/node_ids
+    op: equals
+    value:
+      - review
+  - path: /answer/notices
+    op: contains
+    value: 'review due: review'
+# Dataset metadata.
+lane: behavior
+clock: '2026-01-15T12:00:00Z'
+order: 9

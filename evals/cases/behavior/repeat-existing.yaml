@@ -1,40 +1,36 @@
-order: 2
+# Case: The requested fact is already stored. Find and reuse it rather than creating
+# a duplicate or changing unrelated knowledge.
 id: repeat-existing
-lane: behavior
 category: deduplication
 prompts:
-- Remember again that the amber kite is stored in the loft.
+  - Remember again that the amber kite is stored in the loft.
+scope: orchard
 fixture:
   main:
-    directory: fixtures/graphs/repeat-existing
     nodes:
-    - alias: kite-1
-      file: cedc0258-aea0-4e37-8984-68f6ce9e044d.md
-      fields:
-      - label
-      - scope
-      - id
-scope: orchard
-clock: '2026-01-15T12:00:00Z'
-allowed_mutations:
-- node:update
-- receipt:create
-forbidden_actions: []
-checks:
-- path: /graph/main/facts/length
-  op: equals
-  value: 1
-- path: /graph/main/facts
-  op: contains
-  value:
-    label: amber kite stored in loft
-    scope: orchard
-    id: kite-1
+      kite-1:
+        label: amber kite stored in loft
+# Controlled trial: expected outcomes and grader selection.
 controlled:
   kind: reuse
   query: kite
-  targets:
-  - kite-1
-  facts:
-  - amber kite stored in loft
+  targets: [kite-1]
+  facts: [amber kite stored in loft]
   instruction: If an update is needed, use operation ID $operation_id; do not create a duplicate.
+allowed_mutations: [node:update, receipt:create]
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks:
+  - path: /graph/main/facts/length
+    op: equals
+    value: 1
+  - path: /graph/main/facts
+    op: contains
+    value:
+      label: amber kite stored in loft
+      scope: orchard
+      id: kite-1
+# Dataset metadata.
+lane: behavior
+clock: '2026-01-15T12:00:00Z'
+order: 2

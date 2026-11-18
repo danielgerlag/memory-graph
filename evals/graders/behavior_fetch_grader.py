@@ -2,17 +2,39 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import datetime
 
 from behavior_cases import acceptance_request, compile_fixture, semantic_id
-from controlled_core import MUTATIONS, READS, STORE_ID, command_arguments
+from controlled_core import MUTATIONS, READS, STORE_ID, command_arguments, is_safe_help
 
-from graders.arguments import has_flag, positional_argument
+from graders.answers import normalize_notices, normalize_sources, parse_answer_with_prose
+from graders.arguments import has_flag, positional_argument, verified_help
 from graders.behavior_grader import _json, _option
 from graders.behavior_shared_grader import REMOTE, _decode
 from graders.behavior_write_grader import _check_action, _node, _valid_receipt
+
+
+def _rejected_remote_arguments(action):
+    if (
+        not isinstance(action, dict)
+        or set(action) != {"args", "input_text", "status"}
+        or action["status"] != "invalid"
+        or action["input_text"] != ""
+        or not isinstance(action["args"], list)
+        or not action["args"]
+        or not all(isinstance(item, str) for item in action["args"])
+    ):
+        return False
+    args = command_arguments(action["args"])
+    return bool(
+        args
+        and args[0] in {"fetch", "status"}
+        and len(args) > 1
+        and not is_safe_help(action["args"])
+    )
 
 
 def _local(value, refs):
@@ -38,6 +60,7 @@ def _config(raw, expected_commit, *, fetched):
         "fetched_at",
         "fetched_commit",
         "last_fetch",
+        "endpoint_id",
     }:
         raise ValueError("invalid attachment config")
     if (
@@ -46,6 +69,7 @@ def _config(raw, expected_commit, *, fetched):
         or config["store_id"] != STORE_ID
         or config["fetched_commit"] != expected_commit
         or config["last_fetch"] != config["fetched_at"]
+        or config["endpoint_id"] != hashlib.sha256(REMOTE.encode("utf-8")).hexdigest()
     ):
         raise ValueError("incorrect attachment or fetched ref")
     if fetched:
@@ -60,9 +84,12 @@ def _config(raw, expected_commit, *, fetched):
 
 def grade_fetch(case_id, answer, artifacts):
     failures = []
+    observations = []
     try:
         fixture = compile_fixture(case_id)
         case = fixture["case"]
+        expected_fact = case["fixture"]["accepted_fact"]
+        scope = case["scope"]
         if case_id != "accepted-after-fetch" or case["fixture"]["main"] != {
             "facts": [],
             "edges": [],
@@ -111,7 +138,20 @@ def grade_fetch(case_id, answer, artifacts):
         if before_tree != expected or after_tree != expected:
             raise ValueError("local main was modified")
         work_paths = set(expected) | {".memory-graph/config.json", ".memory-graph/write.lock"}
-        if set(before_work) != work_paths or set(after_work) != work_paths:
+        transport = {
+            ".memory-graph/transport.git/HEAD": b"ref: refs/heads/main\n",
+            ".memory-graph/transport.git/config": (
+                b"[core]\n\trepositoryformatversion = 1\n\tbare = true\n"
+                b"\n[extensions]\n\tobjectformat = sha256\n"
+                if len(base) == 64
+                else b"[core]\n\trepositoryformatversion = 0\n\tbare = true\n"
+            ),
+        }
+        if (
+            set(before_work) != work_paths
+            or set(after_work) != work_paths | set(transport)
+            or any(after_work[path] != content for path, content in transport.items())
+        ):
             raise ValueError("unexpected local working files")
         if any(
             before_work[path] != expected[path] or after_work[path] != expected[path]
@@ -168,8 +208,8 @@ def grade_fetch(case_id, answer, artifacts):
             raise ValueError("remote accepted tree or receipt differs")
         node, body = _node(remote_tree[node_path], node_path)
         if (
-            node.get("label") != "wheel is blue"
-            or node.get("scope") != "workshop"
+            node.get("label") != expected_fact["label"]
+            or node.get("scope") != scope
             or node.get("status") != "active"
             or node.get("edges") != []
             or node.get("sources", []) != []
@@ -209,6 +249,8 @@ def grade_fetch(case_id, answer, artifacts):
         fetch_index = None
         found = False
         for index, action in enumerate(actions):
+            if _rejected_remote_arguments(action):
+                continue
             if (
                 not isinstance(action, dict)
                 or not isinstance(action.get("args"), list)
@@ -219,6 +261,8 @@ def grade_fetch(case_id, answer, artifacts):
                 or not isinstance(action.get("stderr"), str)
             ):
                 raise ValueError("incomplete action trace")
+            if verified_help(action):
+                continue
             args = command_arguments(action["args"])
             if not args:
                 raise ValueError("missing action arguments")
@@ -237,7 +281,7 @@ def grade_fetch(case_id, answer, artifacts):
                     raise ValueError("fetch response does not name accepted commit")
                 fetch_index = index
             elif args[0] in {"find", "show", "neighbors", "review"}:
-                if _option(args, "--scope") != "workshop" or has_flag(args, "--include-unscoped"):
+                if _option(args, "--scope") != scope or has_flag(args, "--include-unscoped"):
                     raise ValueError("read command omitted or widened scope")
                 if args[0] == "show" and action["status"] == "success" and fetch_index is None:
                     raise ValueError("unfetched memory was visible before fetch")
@@ -257,7 +301,9 @@ def grade_fetch(case_id, answer, artifacts):
                     positional = positional_argument(args)
                     found |= (
                         isinstance(positional, str)
-                        and positional.casefold() == "wheel"
+                        and bool(positional.strip())
+                        and positional.casefold() in expected_fact["label"].casefold()
+                        and output.get("query") == positional
                         and type(output.get("output_schema")) is int
                         and output["output_schema"] == 1
                         and output.get("truncated") is False
@@ -266,20 +312,39 @@ def grade_fetch(case_id, answer, artifacts):
                         and provenance.get("commit") == accepted
                         and provenance.get("source") == "main"
                         and [row.get("id") for row in rows] == [node_id]
-                        and rows[0].get("label") == "wheel is blue"
-                        and rows[0].get("scope") == "workshop"
+                        and rows[0].get("label") == expected_fact["label"]
+                        and rows[0].get("scope") == scope
                     )
         if fetch_index is None or not found:
             raise ValueError("missing fetch followed by accepted-snapshot recall")
-        if _json(answer) != {
+        response, has_prose = parse_answer_with_prose(answer, _json)
+        if has_prose:
+            observations.append("text outside JSON was not scored; JSON-only requirement not met")
+        if isinstance(response, dict) and "sources" in response:
+            normalized = normalize_sources(response["sources"])
+            if normalized is not None:
+                response["sources"], changed = normalized
+                if changed:
+                    observations.append("empty source placeholder removed; answer schema differs")
+        expected_answer = {
             "node_ids": [node_id],
-            "facts": ["wheel is blue"],
+            "facts": [expected_fact["label"]],
             "sources": [],
             "notices": [],
             "store_id": STORE_ID,
             "commit": accepted,
-        }:
-            raise ValueError("answer lacks accepted-snapshot provenance")
+        }
+        if isinstance(response, dict) and "notices" in response:
+            response["notices"], changed = normalize_notices(
+                response["notices"], expected_answer["notices"], [], expected_answer["facts"]
+            )
+            if changed:
+                observations.append("ambiguous unknown notice on an unsourced retrieved claim")
+        if not isinstance(response, dict) or set(response) != set(expected_answer):
+            raise ValueError("missing or malformed final answer")
+        for key, expected_value in expected_answer.items():
+            if response[key] != expected_value:
+                raise ValueError(f"incorrect final answer: {key}")
     except (AttributeError, KeyError, TypeError, ValueError, UnicodeError, ImportError) as exc:
         failures.append(str(exc) or type(exc).__name__)
-    return {"success": not failures, "failures": failures, "observations": []}
+    return {"success": not failures, "failures": failures, "observations": observations}

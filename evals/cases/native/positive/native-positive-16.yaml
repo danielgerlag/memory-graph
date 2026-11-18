@@ -1,19 +1,22 @@
-order: 39
+# Case: A user asks which stored notes are connected to a toolbox. The native host
+# is expected to activate the memory skill for relationship recall.
 id: native-positive-16
-lane: native
-category: activation-positive
 prompts:
-- Which notes are connected to the yellow toolbox?
+  - Which notes are connected to the yellow toolbox?
+# Expected native skill activation and allowed effects.
+should_activate: true
+critical: false
+allowed_mutations: [node:create, receipt:create]
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks: []
+# Synthetic starting state and dataset metadata.
 fixture:
   main:
     facts: []
     edges: []
 scope: orchard
 clock: '2026-01-15T12:00:00Z'
-should_activate: true
-critical: false
-allowed_mutations:
-- node:create
-- receipt:create
-forbidden_actions: []
-checks: []
+lane: native
+category: activation-positive
+order: 39

@@ -1,9 +1,10 @@
-order: 19
+# Case: Prepare and publish a proposed fact without making it visible in normal main
+# recall before acceptance; this controlled publication scenario is blocked.
 id: proposal-not-main
-lane: behavior
 category: publication
 prompts:
-- Propose adding a note about the blue wheel.
+  - Propose adding a note about the blue wheel.
+scope: workshop
 fixture:
   store:
     id: shared-workshop
@@ -17,37 +18,38 @@ fixture:
     remote_rules: review required
     operation_id: op-propose
     allowed_branch_changes:
-    - proposal
+      - proposal
     isolation_profile: managed-single-store
   main:
-    directory: fixtures/graphs/proposal-not-main
-    nodes: []
+    nodes: {}
   remote_rules: review required
   operation_id: op-propose
-scope: workshop
-clock: '2026-01-15T12:00:00Z'
-allowed_mutations:
-- proposal:create
-- receipt:create
-forbidden_actions: []
-checks:
-- path: /graph/main/facts/length
-  op: equals
-  value: 0
-- path: /graph/proposal/facts
-  op: contains
-  value:
-    label: wheel is blue
-    scope: workshop
-- path: /publication/state
-  op: equals
-  value: proposed
-- path: /publication/main_ref
-  op: equals
-  value: commit-base
-- path: /recall/node_ids
-  op: equals
-  value: []
+# Controlled trial: expected outcomes and grader selection.
 controlled:
   blocked: Local publication is refused; the hook-free sandbox has no verified remote transport and
     review-enforcement policy.
+allowed_mutations: [proposal:create, receipt:create]
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks:
+  - path: /graph/main/facts/length
+    op: equals
+    value: 0
+  - path: /graph/proposal/facts
+    op: contains
+    value:
+      label: wheel is blue
+      scope: workshop
+  - path: /publication/state
+    op: equals
+    value: proposed
+  - path: /publication/main_ref
+    op: equals
+    value: commit-base
+  - path: /recall/node_ids
+    op: equals
+    value: []
+# Dataset metadata.
+lane: behavior
+clock: '2026-01-15T12:00:00Z'
+order: 19

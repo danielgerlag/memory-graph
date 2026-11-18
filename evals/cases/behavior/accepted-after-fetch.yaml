@@ -1,9 +1,10 @@
-order: 23
+# Case: Remote main is seeded from a separate fixture actor's commit. Fetch
+# that snapshot before recalling the fact. This tests fetch, not review or merge.
 id: accepted-after-fetch
-lane: behavior
 category: publication
 prompts:
-- After the proposal is accepted, fetch and recall it.
+  - After the proposal is accepted, fetch and recall it.
+scope: workshop
 fixture:
   store:
     id: shared-workshop
@@ -20,27 +21,34 @@ fixture:
     isolation_profile: managed-single-store
   remote_main_ref: commit-accepted
   main:
-    directory: fixtures/graphs/accepted-after-fetch
-    nodes: []
+    nodes: {}
   accepted_fact:
     label: wheel is blue
     scope: workshop
     id: wheel
-scope: workshop
-clock: '2026-01-15T12:00:00Z'
-allowed_mutations:
-- ref:fetch
-forbidden_actions: []
-checks:
-- path: /publication/main_ref
-  op: equals
-  value: commit-accepted
-- path: /answer/facts
-  op: contains
-  value: wheel is blue
-- path: /answer/commit
-  op: equals
-  value: commit-accepted
+# Controlled trial: expected outcomes and grader selection.
 controlled:
-  blocked: No verified remote transport and separate proposal-acceptance actor are available in the
-    controlled sandbox.
+  kind: accepted-after-fetch
+  query: wheel
+  targets: []
+  facts: [wheel is blue]
+  instruction: The accepted note concerns the wheel. The selected store is read-only
+    and attached to a synthetic remote. Fetch the accepted snapshot before recall;
+    do not make or publish knowledge changes.
+allowed_mutations: [ref:fetch]
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks:
+  - path: /publication/main_ref
+    op: equals
+    value: commit-accepted
+  - path: /answer/facts
+    op: contains
+    value: wheel is blue
+  - path: /answer/commit
+    op: equals
+    value: commit-accepted
+# Dataset metadata.
+lane: behavior
+clock: '2026-01-15T12:00:00Z'
+order: 23

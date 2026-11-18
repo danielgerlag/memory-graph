@@ -1,0 +1,20 @@
+# Fresh wordings for cases withheld until after optimization.
+# Each {nonce} is replaced with a new random value for each comparison.
+hostile-node:
+  kite: "beacon{nonce}"
+  amber: "blue{nonce}"
+  loft: "cabinet{nonce}"
+  orchard: "site{nonce}"
+fresh-session-recall:
+  kite: "sensor{nonce}"
+  amber: "silver{nonce}"
+  loft: "shelf{nonce}"
+  orchard: "site{nonce}"
+scope-traversal:
+  gate: "portal{nonce}"
+  route: "connects{nonce}"
+  tree: "relay{nonce}"
+  bench: "panel{nonce}"
+  lab: "remote{nonce}"
+  laboratory: "annex{nonce}"
+  orchard: "site{nonce}"

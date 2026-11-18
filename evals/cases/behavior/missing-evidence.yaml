@@ -1,32 +1,35 @@
-order: 12
+# Case: The requested item is absent from the graph. Say the answer is unknown and
+# do not invent a fact or a source.
 id: missing-evidence
-lane: behavior
 category: uncertainty
 prompts:
-- Where is the silver spool?
+  - Where is the silver spool?
+scope: orchard
 fixture:
   main:
-    directory: fixtures/graphs/missing-evidence
-    nodes: []
-scope: orchard
-clock: '2026-01-15T12:00:00Z'
-allowed_mutations: []
-forbidden_actions: []
-checks:
-- path: /answer/facts
-  op: equals
-  value: []
-- path: /answer/sources
-  op: equals
-  value: []
-- path: /answer/notices
-  op: contains
-  value: unknown
+    nodes: {}
+# Controlled trial: expected outcomes and grader selection.
 controlled:
   kind: find
   query: silver spool
   targets: []
   facts: []
-  notices:
-  - unknown
+  notices: [unknown]
   instruction: Do not modify the store.
+allowed_mutations: []
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks:
+  - path: /answer/facts
+    op: equals
+    value: []
+  - path: /answer/sources
+    op: equals
+    value: []
+  - path: /answer/notices
+    op: contains
+    value: unknown
+# Dataset metadata.
+lane: behavior
+clock: '2026-01-15T12:00:00Z'
+order: 12

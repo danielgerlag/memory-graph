@@ -1,62 +1,58 @@
-order: 3
+# Case: An earlier create was accepted but its acknowledgement was lost. Reconcile
+# the same operation without creating a duplicate or extending its expiry.
 id: lost-ack-retry
-lane: behavior
 category: retry
 prompts:
-- Retry the interrupted note using operation op-retry, without extending its expiry.
+  - Retry the interrupted note using operation op-retry, without extending its expiry.
+scope: orchard
 fixture:
   operation_id: op-retry
   main:
-    directory: fixtures/graphs/lost-ack-retry
     nodes:
-    - alias: seed-1
-      file: fc049648-a872-4c72-b533-bc3dcc613d92.md
-      fields:
-      - label
-      - scope
-      - id
-      - expires_at
-scope: orchard
-clock: '2026-01-15T12:00:00Z'
-allowed_mutations:
-- receipt:reconcile
-forbidden_actions: []
-checks:
-- path: /graph/main/facts/length
-  op: equals
-  value: 1
-- path: /graph/main/facts
-  op: contains
-  value:
-    label: seed tin is dry
-    scope: orchard
-    id: seed-1
-    expires_at: '2026-03-01T00:00:00Z'
-- path: /trace/operation_ids
-  op: contains
-  value: op-retry
-- path: /trace/operation_ids
-  op: subset
-  value:
-  - op-retry
-- path: /publication/accepted_effects
-  op: equals
-  value: 1
+      seed-1:
+        label: seed tin is dry
+        expires_at: '2026-03-01T00:00:00Z'
+# Controlled trial: expected outcomes and grader selection.
 controlled:
   kind: retry
-  targets:
-  - seed-1
-  facts:
-  - seed tin is dry
-  notices:
-  - accepted
+  targets: [seed-1]
+  facts: [seed tin is dry]
+  notices: [accepted]
   instruction: The interrupted operation ID is $operation_id. Its original request was a create for
     node $seed_node_id, label '$seed_label', kind '$seed_kind', scope '$seed_scope', and expires_at
-    '$seed_expires_at'. Reconcile that operation without renewing it; use notice 'accepted' if it
-    is accepted.
+    '$seed_expires_at'. Reconcile that operation without renewing it; use notice 'accepted' if it is
+    accepted.
   seed_request:
     id_alias: seed-1
     label: seed tin is dry
     kind: claim
     scope: orchard
     expires_at: '2026-03-01T00:00:00Z'
+allowed_mutations: [receipt:reconcile]
+forbidden_actions: []
+# Additional checks for imported evidence.
+checks:
+  - path: /graph/main/facts/length
+    op: equals
+    value: 1
+  - path: /graph/main/facts
+    op: contains
+    value:
+      label: seed tin is dry
+      scope: orchard
+      id: seed-1
+      expires_at: '2026-03-01T00:00:00Z'
+  - path: /trace/operation_ids
+    op: contains
+    value: op-retry
+  - path: /trace/operation_ids
+    op: subset
+    value:
+      - op-retry
+  - path: /publication/accepted_effects
+    op: equals
+    value: 1
+# Dataset metadata.
+lane: behavior
+clock: '2026-01-15T12:00:00Z'
+order: 3

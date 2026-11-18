@@ -148,10 +148,10 @@ class FixtureTests(unittest.TestCase):
     def test_inventory_has_24_cases_and_never_claims_a_run(self):
         cases = behavior_cases.inventory()
         self.assertEqual(len(cases), 24)
-        self.assertEqual(sum(case["adapter"] == "SUPPORTED" for case in cases), 21)
+        self.assertEqual(sum(case["adapter"] == "SUPPORTED" for case in cases), 22)
         self.assertEqual(
             {case["case_id"] for case in cases if case["adapter"] == "UNSUPPORTED"},
-            {"proposal-not-main", "accepted-after-fetch", "concurrent-changes"},
+            {"proposal-not-main", "concurrent-changes"},
         )
         self.assertTrue(all(case["result"] == "NOT RUN" for case in cases))
         self.assertTrue(
@@ -177,13 +177,11 @@ class FixtureTests(unittest.TestCase):
             self.assertIn(value, prompt)
         self.assertNotIn("$seed_", prompt)
 
-    def test_publication_cases_fail_closed_before_setup(self):
+    def test_blocked_publication_cases_fail_closed_before_setup(self):
         from graders.behavior_concurrent_grader import grade_concurrent
-        from graders.behavior_fetch_grader import grade_fetch
         from graders.behavior_proposal_grader import grade_proposal
 
         direct_graders = {
-            "accepted-after-fetch": grade_fetch,
             "concurrent-changes": grade_concurrent,
             "proposal-not-main": grade_proposal,
         }
@@ -349,6 +347,9 @@ class FixtureTests(unittest.TestCase):
                 inspect_eval.assert_not_called()
                 report = json.loads((output / "report.json").read_text())
                 self.assertEqual(report["status"], "NOT RUN")
+                self.assertEqual(report["model"], "openai/azure/fixture-deployment")
+                self.assertTrue(report["dataset_sha256"])
+                self.assertTrue(report["skill_sha256"])
                 self.assertNotIn("synthetic-secret", json.dumps(report))
 
     def test_retained_log_must_exist_within_the_declared_directory(self):
@@ -454,6 +455,51 @@ class GraderTests(unittest.TestCase):
         artifacts["actions"][0]["stdout"] = json.dumps(output)
         self.assertTrue(behavior_grader.grade("scope-search", answer, artifacts)["success"])
 
+    def test_find_accepts_alternative_query_with_the_same_evidence(self):
+        answer, artifacts = evidence("conflicting-evidence")
+        action = artifacts["actions"][0]
+        action["args"][1] = "cart is"
+        output = json.loads(action["stdout"])
+        output["query"] = "cart is"
+        action["stdout"] = json.dumps(output)
+        result = behavior_grader.grade("conflicting-evidence", answer, artifacts)
+        self.assertTrue(result["success"], result["failures"])
+
+    def test_scoped_search_can_return_extra_relevant_nodes(self):
+        answer, artifacts = evidence("scope-traversal")
+        fixture = behavior_cases.compile_fixture("scope-traversal")
+        action = artifacts["actions"][0]
+        action["args"][1] = "e"
+        output = json.loads(action["stdout"])
+        output["query"] = "e"
+        node = fixture["nodes"]["tree"]
+        output["results"].append({key: node[key] for key in ("id", "label", "scope", "status")})
+        action["stdout"] = json.dumps(output)
+        result = behavior_grader.grade("scope-traversal", answer, artifacts)
+        self.assertTrue(result["success"], result["failures"])
+
+    def test_find_rejects_unrelated_or_inconsistent_query(self):
+        answer, artifacts = evidence("conflicting-evidence")
+        action = artifacts["actions"][0]
+        for argument, returned in (("irrelevant", "irrelevant"), ("cart is", "cart")):
+            with self.subTest(argument=argument, returned=returned):
+                action["args"][1] = argument
+                output = json.loads(action["stdout"])
+                output["query"] = returned
+                action["stdout"] = json.dumps(output)
+                self.assertFalse(
+                    behavior_grader.grade("conflicting-evidence", answer, artifacts)["success"]
+                )
+
+    def test_empty_result_still_requires_the_requested_query(self):
+        answer, artifacts = evidence("missing-evidence")
+        action = artifacts["actions"][0]
+        action["args"][1] = "unrelated"
+        output = json.loads(action["stdout"])
+        output["query"] = "unrelated"
+        action["stdout"] = json.dumps(output)
+        self.assertFalse(behavior_grader.grade("missing-evidence", answer, artifacts)["success"])
+
     def test_scoped_reads_accept_options_before_or_after_positionals(self):
         answer, artifacts = evidence("scope-search")
         fixture = behavior_cases.compile_fixture("scope-search")
@@ -512,6 +558,122 @@ class GraderTests(unittest.TestCase):
                 artifacts["actions"][1]["args"] = [args[0], *args[2:], args[1]]
                 result = behavior_grader.grade(case_id, answer, artifacts)
                 self.assertTrue(result["success"], result["failures"])
+
+    def test_shown_edges_and_targets_can_prove_directed_traversal(self):
+        for case_id in ("directed-traversal", "scope-traversal", "bounded-traversal"):
+            with self.subTest(case_id=case_id):
+                answer, artifacts = evidence(case_id)
+                fixture = behavior_cases.compile_fixture(case_id)
+                scope = fixture["case"]["scope"]
+                commit = artifacts["before"]["main"]
+                visible = {
+                    node["id"] for node in fixture["nodes"].values() if node["scope"] == scope
+                }
+                aliases = [fixture["spec"]["root"], *fixture["spec"]["targets"]]
+                artifacts["actions"] = artifacts["actions"][:1]
+                for alias in aliases:
+                    node = json.loads(json.dumps(fixture["nodes"][alias]))
+                    node["edges"] = [edge for edge in node["edges"] if edge["to"] in visible]
+                    artifacts["actions"].append(
+                        {
+                            "args": ["show", node["id"], "--scope", scope],
+                            "status": "success",
+                            "stdout": json.dumps(
+                                {
+                                    "output_schema": 1,
+                                    "snapshot": {
+                                        "store_id": STORE_ID,
+                                        "commit": commit,
+                                        "source": "main",
+                                    },
+                                    "node": node,
+                                    "body": "",
+                                }
+                            ),
+                            "stderr": "",
+                        }
+                    )
+                result = behavior_grader.grade(case_id, answer, artifacts)
+                self.assertTrue(result["success"], result["failures"])
+                missing_target = json.loads(json.dumps(artifacts))
+                missing_target["actions"].pop()
+                self.assertFalse(behavior_grader.grade(case_id, answer, missing_target)["success"])
+                wrong_edge = json.loads(json.dumps(artifacts))
+                output = json.loads(wrong_edge["actions"][1]["stdout"])
+                output["node"]["edges"][0]["label"] = "different"
+                wrong_edge["actions"][1]["stdout"] = json.dumps(output)
+                self.assertFalse(behavior_grader.grade(case_id, answer, wrong_edge)["success"])
+                widened = json.loads(json.dumps(artifacts))
+                widened["actions"][1]["args"].append("--include-unscoped")
+                self.assertFalse(behavior_grader.grade(case_id, answer, widened)["success"])
+
+    def test_traversal_accepts_grounded_relational_answers(self):
+        answer, artifacts = evidence("directed-traversal")
+        fixture = behavior_cases.compile_fixture("directed-traversal")
+        root = fixture["nodes"][fixture["spec"]["root"]]
+        target = fixture["nodes"][fixture["spec"]["targets"][0]]
+        edge = fixture["spec"]["edge"]
+        response = json.loads(answer)
+        response["node_ids"] = [root["id"], target["id"]]
+        for fact in (
+            target["label"],
+            f"{root['label']} {edge} {target['label']}",
+            f"{root['label']} -{edge}-> {target['label']}",
+            f"{root['label']} --{edge}--> {target['label']}",
+            f"{root['label']} -> {edge} -> {target['label']}",
+            f"{root['label']} {edge}s {target['label']}.",
+            f"{fixture['case']['scope']}: {root['label']} --{edge}--> {target['label']}",
+            f"{fixture['case']['scope']} {root['label']} --{edge}--> {target['label']}",
+        ):
+            with self.subTest(fact=fact):
+                response["facts"] = [fact]
+                result = behavior_grader.grade(
+                    "directed-traversal", json.dumps(response), artifacts
+                )
+                self.assertTrue(result["success"], result["failures"])
+
+    def test_traversal_rejects_ungrounded_or_incomplete_answers(self):
+        answer, artifacts = evidence("directed-traversal")
+        fixture = behavior_cases.compile_fixture("directed-traversal")
+        root = fixture["nodes"][fixture["spec"]["root"]]
+        target = fixture["nodes"][fixture["spec"]["targets"][0]]
+        edge = fixture["spec"]["edge"]
+        response = json.loads(answer)
+        for fact in (
+            f"{target['label']} {edge} {root['label']}",
+            f"{root['label']} different {target['label']}",
+            f"{root['label']} <-{edge}- {target['label']}",
+            f"{root['label']} {edge} {target['label']} and something else",
+            f"different-scope {root['label']} --{edge}--> {target['label']}",
+        ):
+            with self.subTest(fact=fact):
+                response["facts"] = [fact]
+                self.assertFalse(
+                    behavior_grader.grade("directed-traversal", json.dumps(response), artifacts)[
+                        "success"
+                    ]
+                )
+        response["facts"] = [target["label"]]
+        for node_ids in ([root["id"]], [target["id"], "unrelated"], [target["id"], target["id"]]):
+            with self.subTest(node_ids=node_ids):
+                response["node_ids"] = node_ids
+                self.assertFalse(
+                    behavior_grader.grade("directed-traversal", json.dumps(response), artifacts)[
+                        "success"
+                    ]
+                )
+
+    def test_unfiltered_neighbors_are_valid_when_results_prove_the_requested_edge(self):
+        answer, artifacts = evidence("directed-traversal")
+        action = artifacts["actions"][1]
+        index = action["args"].index("--label")
+        del action["args"][index : index + 2]
+        result = behavior_grader.grade("directed-traversal", answer, artifacts)
+        self.assertTrue(result["success"], result["failures"])
+        output = json.loads(action["stdout"])
+        output["relationships"][0]["label"] = "different"
+        action["stdout"] = json.dumps(output)
+        self.assertFalse(behavior_grader.grade("directed-traversal", answer, artifacts)["success"])
 
     def test_global_json_preserves_recorded_source_checks(self):
         answer, artifacts = evidence("conflicting-evidence")
@@ -603,6 +765,61 @@ class GraderTests(unittest.TestCase):
         artifacts["actions"] = artifacts["actions"][:1]
         self.assertFalse(behavior_grader.grade("hostile-node", answer, artifacts)["success"])
 
+    def test_blank_source_placeholders_do_not_count_as_evidence(self):
+        answer, artifacts = evidence("scope-search")
+        response = json.loads(answer)
+        response["sources"] = ["", "  ", []]
+        result = behavior_grader.grade("scope-search", json.dumps(response), artifacts)
+        self.assertTrue(result["success"])
+        self.assertIn(
+            "empty source placeholder removed; answer schema differs", result["observations"]
+        )
+        response["sources"].append("invented")
+        self.assertFalse(
+            behavior_grader.grade("scope-search", json.dumps(response), artifacts)["success"]
+        )
+        response["sources"] = [["invented"]]
+        self.assertFalse(
+            behavior_grader.grade("scope-search", json.dumps(response), artifacts)["success"]
+        )
+
+        answer, artifacts = evidence("conflicting-evidence")
+        response = json.loads(answer)
+        response["sources"].append("")
+        self.assertTrue(
+            behavior_grader.grade("conflicting-evidence", json.dumps(response), artifacts)[
+                "success"
+            ]
+        )
+        response["sources"] = [""]
+        self.assertFalse(
+            behavior_grader.grade("conflicting-evidence", json.dumps(response), artifacts)[
+                "success"
+            ]
+        )
+
+    def test_unknown_notice_on_an_unsourced_fact_is_a_visible_warning(self):
+        answer, artifacts = evidence("scope-search")
+        response = json.loads(answer)
+        response["notices"] = ["unknown"]
+        result = behavior_grader.grade("scope-search", json.dumps(response), artifacts)
+        self.assertTrue(result["success"], result["failures"])
+        self.assertIn(
+            "ambiguous unknown notice on an unsourced retrieved claim", result["observations"]
+        )
+        response["facts"] = []
+        self.assertFalse(
+            behavior_grader.grade("scope-search", json.dumps(response), artifacts)["success"]
+        )
+        answer, artifacts = evidence("conflicting-evidence")
+        response = json.loads(answer)
+        response["notices"] = ["unknown"]
+        self.assertFalse(
+            behavior_grader.grade("conflicting-evidence", json.dumps(response), artifacts)[
+                "success"
+            ]
+        )
+
     def test_conflict_requires_actual_disputed_sources(self):
         answer, artifacts = evidence("conflicting-evidence")
         show = json.loads(artifacts["actions"][1]["stdout"])
@@ -621,7 +838,13 @@ class GraderTests(unittest.TestCase):
 
     def test_multi_session_requires_fresh_context_and_first_handoff(self):
         answer, artifacts = evidence("fresh-session-recall")
-        for change in ("missing_first", "changed_graph", "carried_transcript", "first_mutation"):
+        for change in (
+            "missing_first",
+            "changed_graph",
+            "carried_transcript",
+            "first_mutation",
+            "unexpected_fetch",
+        ):
             with self.subTest(change=change):
                 altered = json.loads(json.dumps(artifacts))
                 if change == "missing_first":
@@ -631,6 +854,10 @@ class GraderTests(unittest.TestCase):
                 elif change == "carried_transcript":
                     altered["second_start_messages"].append(
                         {"role": "assistant", "content": "prior"}
+                    )
+                elif change == "unexpected_fetch":
+                    altered["first_context"]["actions"].append(
+                        {"args": ["fetch"], "status": "invalid"}
                     )
                 else:
                     altered["first_context"]["actions"].append(
@@ -690,7 +917,7 @@ class GraderTests(unittest.TestCase):
             completed_at="observed",
             error=None,
             limit=None,
-            output=SimpleNamespace(stop_reason="stop", completion=answer),
+            output=SimpleNamespace(choices=[object()], stop_reason="stop", completion=answer),
             scores={"behavior": score},
             model_usage={"model": SimpleNamespace(total_tokens=100, total_cost=0.1)},
         )
@@ -721,6 +948,22 @@ class GraderTests(unittest.TestCase):
         self.assertIn(
             "missing model token usage", run_behavior.result_problems(logs, "scope-search", 1.0)[0]
         )
+
+    def test_runner_reports_provider_timeout_with_empty_model_choices(self):
+        sample = SimpleNamespace(
+            id="scope-search",
+            epoch=1,
+            completed_at="observed",
+            error=SimpleNamespace(message="RetryError: APITimeoutError"),
+            limit=None,
+            output=SimpleNamespace(choices=[]),
+            scores={},
+            model_usage={},
+        )
+        logs = [SimpleNamespace(status="error", samples=[sample])]
+        problems, _, _, _ = run_behavior.result_problems(logs, "scope-search", None, pricing=False)
+        self.assertIn("model API request timed out", problems)
+        self.assertIn("missing or truncated model completion", problems)
 
 
 try:
