@@ -9,6 +9,42 @@ permissions, and release performance have not yet been certified.
 An isolated, network-denied discovery check succeeded with Copilot CLI
 1.0.110-3; activation and live behavior remain unverified.
 
+## Quick install
+
+Prerequisites: Python 3.12+, Git 2.45+, and [uv](https://docs.astral.sh/uv/).
+From a checkout, copy the skill into a host's skills directory and prepare its
+locked dependencies (this step downloads packages):
+
+```sh
+python3 tools/package.py install --host copilot               # ~/.copilot/skills
+python3 tools/package.py install --host claude --project .    # ./.claude/skills
+python3 tools/package.py install --host codex                 # ~/.agents/skills
+```
+
+`--host copilot` with `--project DIR` installs into `DIR/.github/skills`. Add
+`--force` to replace an earlier memory-graph install, or `--no-sync` to skip
+`uv sync`. A zip of the skill (a single `memory-graph/` folder) for hosts that
+import archives comes from `python3 tools/package.py archive --output FILE.zip`;
+extract it and run `uv sync --locked --project memory-graph` afterwards.
+
+**Plugin marketplace (Copilot CLI and Claude Code).** The repository is also a
+marketplace (`.claude-plugin/marketplace.json`) with one plugin:
+
+```sh
+copilot plugin marketplace add danielgerlag/memory-graph
+copilot plugin install memory-graph@memory-graph-skill
+# Claude Code: claude plugin marketplace add danielgerlag/memory-graph
+#              claude plugin install memory-graph@memory-graph-skill
+```
+
+A plugin install copies files but does not install dependencies. Run
+`uv sync --locked --project <plugin>/skills/memory-graph` once for the installed
+plugin's skill directory (and again after a plugin update), or use the
+installer above. A local Copilot CLI install from a checkout was verified;
+Claude Code and remote-marketplace installs were not. `plugins/memory-graph/` is
+a generated copy of `memory-graph/`; refresh it with
+`python3 tools/package.py plugin` (a test fails if it is stale).
+
 ## Prerequisites and setup
 
 Install Python 3.12 or newer, Git 2.45 or newer, and

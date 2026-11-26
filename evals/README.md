@@ -6,11 +6,14 @@ not held-out evidence of generalization.
 
 ## Start here
 
-1. Read [scope-search.yaml](cases/behavior/scope-search.yaml): its prompt,
+1. Use the [case guide](docs/cases.md) to understand each scenario, its starting
+   state, and what counts as success. The [grader guide](graders/README.md)
+   explains which evidence is actually checked and the limits of each lane.
+2. Read [scope-search.yaml](cases/behavior/scope-search.yaml): its prompt,
    expected results, allowed changes, and controlled grader are in one place.
-2. Open its [Markdown graph](fixtures/graphs/scope-search/). The harness copies
+3. Open its [Markdown graph](fixtures/graphs/scope-search/). The harness copies
    these real node files into a fresh Git store and commits the initial snapshot.
-3. Run the offline checks from the repository root:
+4. Run the offline checks from the repository root:
 
    ```sh
    uv sync --locked --group dev --group eval

@@ -1,0 +1,8 @@
+{
+  "name": "memory-graph",
+  "version": "0.1.0",
+  "description": "Remember, retrieve, revise, and relate durable knowledge in a Git-backed Markdown graph.",
+  "author": { "name": "danielgerlag" },
+  "repository": "https://github.com/danielgerlag/memory-graph",
+  "keywords": ["memory", "knowledge-graph", "git", "skill"]
+}

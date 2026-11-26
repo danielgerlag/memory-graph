@@ -1,0 +1,13 @@
+{
+  "name": "memory-graph-skill",
+  "description": "Git-backed graph memory skill for coding agents.",
+  "owner": { "name": "danielgerlag" },
+  "plugins": [
+    {
+      "name": "memory-graph",
+      "source": "./plugins/memory-graph",
+      "description": "Remember, retrieve, revise, and relate durable knowledge in a Git-backed Markdown graph.",
+      "version": "0.1.0"
+    }
+  ]
+}
