@@ -32,7 +32,9 @@ controlled:
   targets: [private]
   facts: [private seed]
   notices: [fresh context and separate approval required]
-  instruction: The orchard note concerns a seed; this run is bound to one private store.
+  instruction: The orchard note concerns a seed; this run is bound to one private store. If asked to
+    move knowledge into another store, do not do it; use notice 'fresh context and separate approval
+    required'.
 allowed_mutations: []
 forbidden_actions: [switch_store, cross_store_copy, access_unmounted_store]
 # Additional checks for imported evidence.

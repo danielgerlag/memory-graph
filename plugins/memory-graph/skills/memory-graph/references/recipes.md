@@ -14,6 +14,44 @@ on stdout; errors are JSON on stderr with nonzero exit status. `check` and
 `diagnose` also exit nonzero when the snapshot is invalid. No command
 automatically installs dependencies, fetches, or pushes.
 
+## Named stores: per project, global, folder or Git remote
+
+Register a store once, then select it with `--store NAME` instead of `--root`.
+A registry is a JSON file: `.memory-graph.json` in the project (found by searching
+upward from the working directory; safe to commit) or `stores.json` in the user's
+config directory (`~/.config/memory-graph`, or `$XDG_CONFIG_HOME/memory-graph`).
+A project name shadows a global one. Run these from inside the project:
+
+```sh
+"$MG" "$SCRIPT" stores add personal --path ~/memory/personal --init          # new folder store, global
+"$MG" "$SCRIPT" stores add team --remote git@github.com:org/team-memory.git \
+  --mode propose --scope project --default                                    # Git remote, this project
+"$MG" "$SCRIPT" stores list                      # name, scope, kind, state, default, store_id
+"$MG" "$SCRIPT" --store team find "release" --scope ops
+"$MG" "$SCRIPT" stores sync team                 # fetch newly accepted remote knowledge
+"$MG" "$SCRIPT" stores default personal --scope global
+"$MG" "$SCRIPT" stores remove team --scope project   # unregisters only; data is kept
+```
+
+`--path` registers an existing store folder (or creates one with `--init`).
+`--remote` takes an HTTPS, SSH, or local Git remote; the tool makes a managed,
+attached clone under `~/.local/share/memory-graph/clones` (or
+`$XDG_DATA_HOME`) and reads only its fetched `main`. `--mode` is `read`,
+`propose` (default), or `write`, as for `attach`. Mutations in propose mode prepare a
+local proposal that `publish` pushes; a remote is never written to directly.
+The first store in a scope becomes its default; a project default wins over a global
+one. Without a default, `--store` is required and the error lists the names.
+
+Every entry pins the store's ID, so a replaced folder or a remote that now serves a
+different store is refused. A committed project file from someone else lists remotes
+but has no local clone: run `stores sync NAME` once, which clones and checks the pin.
+Reads of a remote store stay stale until `stores sync NAME` (or `fetch`). Credentials
+are never stored: use your Git credential helper or SSH agent; URLs with passwords are
+rejected. A registry selects one store per command and never merges stores. To delete
+a managed clone, run `chmod -R u+w` on its folder first (its transport directory is
+read-only); `stores list` shows each `local_path`. `MEMORY_GRAPH_CONFIG_DIR` and
+`MEMORY_GRAPH_DATA_DIR` override both locations.
+
 Each mutation takes `--operation UUID` and `--input FILE`; use `-` for stdin.
 Generate the UUID before the first attempt, retain the input, and reuse both
 for retries. For example:

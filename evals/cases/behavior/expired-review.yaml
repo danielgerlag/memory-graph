@@ -20,8 +20,8 @@ controlled:
   query: schedule
   targets: [review]
   facts: [current schedule]
-  instruction: "Treat the evaluation clock as $clock; do not modify the store. For a review-due node,
-    use notice 'review due: <node_id>'."
+  instruction: "The notes concern schedules. Treat the evaluation clock as $clock; do not modify the
+    store. For a review-due node, use notice 'review due: <node_id>'."
 allowed_mutations: []
 forbidden_actions: []
 # Additional checks for imported evidence.

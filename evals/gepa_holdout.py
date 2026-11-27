@@ -17,6 +17,7 @@ from ruamel.yaml import YAML
 
 ROOT = Path(__file__).resolve().parents[1]
 CASE_IDS = ("hostile-node", "fresh-session-recall", "scope-traversal")
+EXTENDED_CASE_IDS = (*CASE_IDS, "remember-second-domain", "novel-vocabulary")
 ALIAS_KEYS = {"id", "root", "targets", "forbidden", "from", "to"}
 
 
@@ -72,7 +73,7 @@ def _rewrite_node(path, replacements):
     )
 
 
-def prepare_suite(root):
+def prepare_suite(root, case_ids=CASE_IDS):
     suite = Path(root).resolve(strict=True) / "holdout-suite"
     suite.mkdir(mode=0o700)
     shutil.copytree(
@@ -87,10 +88,10 @@ def prepare_suite(root):
         target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         target.write_bytes(content)
     transforms = _yaml().load((ROOT / "evals" / "gepa_holdout.yaml").read_text(encoding="utf-8"))
-    if not isinstance(transforms, dict) or set(transforms) != set(CASE_IDS):
+    if not isinstance(transforms, dict) or not set(case_ids) <= set(transforms):
         raise ValueError("invalid holdout transformations")
     nonce = secrets.token_hex(4)
-    for case_id in CASE_IDS:
+    for case_id in case_ids:
         mapping = transforms[case_id]
         if not isinstance(mapping, dict) or not all(
             isinstance(key, str) and key and isinstance(value, str) and "{nonce}" in value
@@ -179,4 +180,92 @@ def run_holdout(root, config, baseline, candidate, timeout):
         "status": "COMPLETE",
         "description": "Withheld cases with fresh randomized vocabulary, one trial each.",
         "results": results,
+    }
+
+
+def run_holdout_matrix(
+    root, config, candidates, models, case_ids, trials, workers, timeout, env=None, infra_retries=2
+):
+    """Run every candidate on fresh-vocabulary variants for several models, in parallel.
+
+    Infrastructure ERRORs are retried; a trial that still cannot be scored is recorded as ERROR
+    instead of aborting the comparison.
+    """
+    import concurrent.futures
+
+    root = Path(root).resolve(strict=True)
+    config = Path(config).resolve(strict=True)
+    suite = prepare_suite(root, case_ids)
+    candidate_dir = suite / "candidate-instructions"
+    candidate_dir.mkdir(mode=0o700)
+    paths = {}
+    for name, text in candidates.items():
+        paths[name] = candidate_dir / f"{name}.md"
+        paths[name].write_text(text, encoding="utf-8")
+        paths[name].chmod(0o600)
+
+    def one(name, model, case_id, trial):
+        row = {"candidate": name, "model": model, "case": case_id, "trial": trial}
+        for _attempt in range(1 + infra_retries):
+            trial_dir = suite / "eval-runs" / f"holdout-{uuid.uuid4().hex}"
+            command = [
+                sys.executable,
+                str(suite / "evals" / "run_behavior.py"),
+                "--run",
+                "--config",
+                str(config),
+                "--case-id",
+                case_id,
+                "--trial",
+                str(trial),
+                "--model",
+                f"openai/azure/{model}",
+                "--skill-instructions",
+                str(paths[name]),
+                "--log-dir",
+                str(trial_dir),
+            ]
+            try:
+                subprocess.run(
+                    command,
+                    cwd=suite,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                continue
+            path = trial_dir / "report.json"
+            if not path.is_file():
+                continue
+            report = json.loads(path.read_text(encoding="utf-8"))
+            row.update(
+                status=report.get("status"),
+                detail=report.get("score_detail") or "; ".join(report.get("problems") or []),
+                observations=report.get("observations", []),
+                report=str(path.relative_to(root)),
+            )
+            if report.get("status") in {"PASS", "FAIL"} or "limit exhaustion" in " ".join(
+                report.get("problems") or []
+            ):
+                return row
+        row.setdefault("status", "ERROR")
+        return row
+
+    jobs = [
+        (name, model, case_id, trial)
+        for name in candidates
+        for model in models
+        for case_id in case_ids
+        for trial in range(1, trials + 1)
+    ]
+    with concurrent.futures.ThreadPoolExecutor(workers) as pool:
+        rows = list(pool.map(lambda job: one(*job), jobs))
+    return {
+        "status": "COMPLETE",
+        "description": "Withheld cases with fresh randomized vocabulary.",
+        "suite": str(suite.relative_to(root)),
+        "rows": rows,
     }

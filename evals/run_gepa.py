@@ -200,7 +200,8 @@ class TrialAdapter:
 
 
 class Reflector:
-    def __init__(self, *, root, config, limit, timeout, max_tokens):
+    def __init__(self, *, root, config, limit, timeout, max_tokens, model=None):
+        self.model = model
         self.root = root
         self.config = config
         self.limit = limit
@@ -234,6 +235,7 @@ class Reflector:
             str(path),
             "--max-tokens",
             str(self.max_tokens),
+            *(["--model", self.model] if self.model else []),
         ]
         try:
             completed = subprocess.run(

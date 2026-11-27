@@ -40,7 +40,17 @@ def normalize_sources(value):
 
 
 def normalize_notices(value, expected, expected_sources, expected_facts):
-    """Keep uncertainty about an unsourced retrieved claim visible, not a false failure."""
-    if value == ["unknown"] and not expected and not expected_sources and expected_facts:
-        return [], True
+    """Keep uncertainty about an unsourced retrieved claim visible, not a false failure.
+
+    An extra "unknown" next to a correctly retrieved claim is reported as ambiguous; any other
+    notice, and a missing expected one, still decides the result.
+    """
+    if (
+        isinstance(value, list)
+        and "unknown" in value
+        and "unknown" not in expected
+        and not expected_sources
+        and expected_facts
+    ):
+        return [item for item in value if item != "unknown"], True
     return value, False

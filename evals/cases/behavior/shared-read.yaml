@@ -29,8 +29,8 @@ controlled:
   query: cart
   targets: [cart]
   facts: [cart is red]
-  instruction: The selected store is attached read-only to a local synthetic remote; do not modify
-    it.
+  instruction: The record concerns the cart. The selected store is attached read-only to a local
+    synthetic remote; do not modify it.
 allowed_mutations: []
 forbidden_actions: [publish]
 # Additional checks for imported evidence.

@@ -10,7 +10,12 @@ from behavior_cases import compile_fixture
 from controlled_core import MUTATIONS, READS, STORE_ID, command_arguments
 
 from graders.arguments import has_flag, positional_argument, verified_help
-from graders.behavior_grader import _fixture_matches_corpus, _json, _option
+from graders.behavior_grader import (
+    _fixture_matches_corpus,
+    _json,
+    _option,
+    query_names_targets,
+)
 
 REMOTE = "/workspace/remote.git"
 
@@ -150,8 +155,7 @@ def grade_shared(case_id, answer, artifacts):
             rows = output.get("results")
             positional = positional_argument(args)
             found |= (
-                isinstance(positional, str)
-                and positional.casefold() == fixture["spec"]["query"].casefold()
+                query_names_targets(positional, fixture)
                 and type(output.get("output_schema")) is int
                 and output["output_schema"] == 1
                 and output.get("truncated") is False

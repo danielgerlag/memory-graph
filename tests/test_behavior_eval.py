@@ -1230,5 +1230,91 @@ class InspectAdapterTests(unittest.IsolatedAsyncioTestCase):
                     behavior_inspect.build_task(args)
 
 
+class EvaluationToleranceTests(unittest.TestCase):
+    def test_help_for_known_commands_is_safe_but_other_arguments_are_not(self):
+        from controlled_core import is_safe_help
+
+        for args in (
+            ["--help"],
+            ["create", "--help"],
+            ["find", "-h"],
+            ["--json", "apply", "--help"],
+        ):
+            self.assertTrue(is_safe_help(args), args)
+        for args in (["create", "--input", "-"], ["stores", "--help"], ["create", "x", "--help"]):
+            self.assertFalse(is_safe_help(args), args)
+
+    def test_any_query_naming_the_target_is_accepted(self):
+        fixture = behavior_cases.compile_fixture("read-only")
+        for query in ("seed tin", "Seed", "tin", "dry"):
+            self.assertTrue(behavior_grader.query_names_targets(query, fixture), query)
+        for query in ("orchard", "", "  ", None):
+            self.assertFalse(behavior_grader.query_names_targets(query, fixture), query)
+
+    def test_natural_phrasing_of_a_created_fact_is_the_same_fact(self):
+        from graders.behavior_write_grader import same_fact
+
+        self.assertTrue(same_fact("Amber kite is stored in the loft", "amber kite stored in loft"))
+        self.assertTrue(same_fact("ceramic wheel uses a blue belt", "ceramic wheel uses blue belt"))
+        self.assertFalse(same_fact("amber kite stored in barn", "amber kite stored in loft"))
+        self.assertFalse(
+            same_fact("amber kite stored in the loft too", "amber kite stored in loft")
+        )
+        self.assertFalse(same_fact(None, "amber kite"))
+
+    def test_extra_unknown_notice_is_ignored_only_beside_a_retrieved_unsourced_fact(self):
+        from graders.answers import normalize_notices
+
+        self.assertEqual(
+            normalize_notices(["review due: x", "unknown"], ["review due: x"], [], ["f"]),
+            (["review due: x"], True),
+        )
+        self.assertEqual(normalize_notices(["unknown"], ["unknown"], [], []), (["unknown"], False))
+        self.assertEqual(normalize_notices(["unknown"], [], ["src"], ["f"]), (["unknown"], False))
+
+    def test_relationship_statements_may_include_to(self):
+        fixture = behavior_cases.compile_fixture("bounded-traversal")
+        self.assertTrue(
+            behavior_grader._traversal_answer(
+                "facts", ["A connects to B", "B connects to C"], fixture
+            )
+        )
+        self.assertFalse(
+            behavior_grader._traversal_answer(
+                "facts", ["A connects to C", "B connects to C"], fixture
+            )
+        )
+
+    def test_placeholder_sources_in_a_write_answer_are_not_a_failure(self):
+        from graders.behavior_write_grader import _answer
+
+        ids, commit = ["n1"], "a" * 40
+        answer = json.dumps(
+            {
+                "node_ids": ids,
+                "facts": ["f"],
+                "sources": [""],
+                "notices": [],
+                "store_id": STORE_ID,
+                "commit": commit,
+            }
+        )
+        self.assertTrue(_answer(answer, ids, ["f"], [], [], commit))
+        self.assertFalse(_answer(answer.replace('""', '"real"'), ids, ["f"], [], [], commit))
+
+    def test_help_calls_do_not_fail_a_read_trial(self):
+        answer, artifacts = evidence("scope-search")
+        artifacts["actions"].insert(
+            0,
+            {
+                "args": ["find", "--help"],
+                "status": "success",
+                "stdout": "usage: memory-graph find [-h]\n",
+                "stderr": "",
+            },
+        )
+        self.assertTrue(behavior_grader.grade("scope-search", answer, artifacts)["success"])
+
+
 if __name__ == "__main__":
     unittest.main()

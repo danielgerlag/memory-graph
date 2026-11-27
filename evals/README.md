@@ -167,6 +167,41 @@ development scenarios, not proof of broad generalization. Each runs once per
 skill, so results are noisy. Neither this search nor its holdout establishes
 native activation or unblocks the two publication scenarios.
 
+## Hill-climb the skill across models
+
+`run_gepa_hillclimb.py` is the multi-model optimizer (the older `run_gepa.py`
+above is the small single-model search). Each candidate `SKILL.md` is scored by
+controlled trials on several models; a case's score is the fraction of models that
+pass it. Reflection uses a separate, stronger model and receives, for each failing
+trial, the user request, the commands run with their errors, the final answer, and a
+plain-language reading of the grader's failure message.
+
+```sh
+uv sync --locked --group eval --group optimize
+uv run --frozen --group eval --group optimize python evals/run_gepa_hillclimb.py optimize \
+  --config evals/configs/foundry.gepa.local.yaml --name gepa-1 \
+  --models gpt-5.4-mini gpt-4.1 --reflection-model gpt-6.1-terra \
+  --seed eval-runs/cand/seed.md --max-metric-calls 220 --max-reflections 20
+uv run --frozen --group eval --group optimize python evals/run_gepa_hillclimb.py holdout \
+  --config evals/configs/foundry.gepa.local.yaml --name holdout-1 \
+  --models gpt-5.4-mini gpt-4.1 --candidates eval-runs/cand/seed.md eval-runs/gepa-1/best.md
+```
+
+Training, validation, and holdout cases are disjoint (see `TRAIN_CASES`,
+`VALIDATION_CASES`, and `HOLDOUT_CASES`). Holdouts are fresh randomized-vocabulary
+variants of withheld cases (`gepa_holdout.yaml`). The run writes every trial to
+`evaluations.jsonl`, GEPA's reasoning to `gepa.log`, and each candidate to
+`candidates/`. Infrastructure errors are retried and budget exhaustion counts as a
+failed trial. The seed must live inside the repository.
+
+Requirements: a real Docker Engine 24.0.6 or newer with Compose v2 (Inspect AI rejects
+Podman), and a controlled config whose `docker_host` points at it; pass `--docker-bin`
+if another `docker` shadows it on `PATH`. A relaxed-budget config (for example 16 turns,
+40,000 tokens, 4,000-token generations, 240 s) avoids scoring budget exhaustion as a
+skill failure. Keep the machine awake: sleeping pauses a long run. Optimization on the
+development corpus overfits it by construction, so judge a candidate on the holdout
+variants and on cases that were never optimized.
+
 ## Layout
 
 ```text
@@ -179,6 +214,7 @@ evals/
   configs/               combined runner configuration templates
   graders/               independent artifact and imported-evidence graders
   results.py              export saved trial reports as CSV
+  run_gepa_hillclimb.py   multi-model GEPA optimizer and holdout comparison
   corpus.yaml            dataset metadata and trial count
   corpus.lock.json       pinned source and generated-dataset hashes
   scenarios.json         generated compatibility snapshot, not authoring source

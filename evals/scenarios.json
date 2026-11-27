@@ -755,7 +755,7 @@
       "lane": "behavior",
       "category": "read-only",
       "prompts": [
-        "Where is the seed tin? Just answer, changing nothing."
+        "What do we know about the seed tin? Just answer, changing nothing."
       ],
       "fixture": {
         "main": {

@@ -18,3 +18,18 @@ scope-traversal:
   lab: "remote{nonce}"
   laboratory: "annex{nonce}"
   orchard: "site{nonce}"
+remember-second-domain:
+  ceramic: "glazed{nonce}"
+  wheel: "device{nonce}"
+  blue: "violet{nonce}"
+  belt: "strap{nonce}"
+  workshop: "studio{nonce}"
+  card: "tag{nonce}"
+novel-vocabulary:
+  glimmer: "ember{nonce}"
+  tram: "shuttle{nonce}"
+  frobulate: "zorble{nonce}"
+  paper: "copper{nonce}"
+  moon: "comet{nonce}"
+  transportation-oddity: "vehicle-kind{nonce}"
+  crafted-satellite: "object-kind{nonce}"

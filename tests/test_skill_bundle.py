@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -63,15 +64,22 @@ def test_export_is_whole_bundle_and_does_not_overwrite(tmp_path):
     assert "already exists" in second.stderr
 
 
-def test_store_commands_still_require_explicit_root():
+def test_store_commands_never_guess_a_store(tmp_path):
+    env = {
+        **os.environ,
+        "MEMORY_GRAPH_CONFIG_DIR": str(tmp_path / "config"),
+        "MEMORY_GRAPH_DATA_DIR": str(tmp_path / "data"),
+    }
     response = subprocess.run(
         [sys.executable, str(SKILL / "scripts/memory_graph.py"), "find", "example"],
         capture_output=True,
         text=True,
         check=False,
+        cwd=tmp_path,
+        env=env,
     )
     assert response.returncode != 0
-    assert "--root is required" in json.loads(response.stderr)["error"]["message"]
+    assert "no store selected" in json.loads(response.stderr)["error"]["message"]
 
 
 def test_export_rejects_source_symlink_and_parent_escape(tmp_path, monkeypatch):

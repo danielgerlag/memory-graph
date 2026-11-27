@@ -22,7 +22,7 @@ from controlled_core import MUTATIONS, READS, STORE_ID, command_arguments
 from corpus import parse_node
 
 from graders.answers import normalize_notices, normalize_sources
-from graders.arguments import canonical_option, has_flag, positional_argument
+from graders.arguments import canonical_option, has_flag, positional_argument, verified_help
 
 
 def _unique_pairs(pairs):
@@ -70,6 +70,29 @@ def _provenance(result, commit):
         and snapshot.get("store_id") == STORE_ID
         and snapshot.get("source") == "main"
     )
+
+
+def query_names_targets(positional, fixture):
+    """True when a nonempty query is a substring of every target node's searchable text."""
+    if not isinstance(positional, str) or not positional.strip():
+        return False
+    spec, nodes = fixture["spec"], fixture["nodes"]
+    if not spec["targets"]:
+        return True
+    needle = positional.casefold()
+    facts = {fact["id"]: fact for fact in fixture["case"]["fixture"]["main"]["facts"]}
+    for alias in spec["targets"]:
+        node = nodes[alias]
+        fields = (
+            node["label"],
+            " ".join(node.get("aliases", [])),
+            " ".join(node.get("tags", [])),
+            json.dumps(node.get("properties", {}), ensure_ascii=False, sort_keys=True),
+            facts.get(alias, {}).get("body", ""),
+        )
+        if not any(needle in field.casefold() for field in fields):
+            return False
+    return True
 
 
 def _find_query_matches(positional, result, fixture, aliases):
@@ -155,8 +178,10 @@ def _traversal_answer(key, observed, fixture):
         for source in (source_label, f"{scope} {source_label}"):
             for destination in (target_label, f"{scope} {target_label}"):
                 forms.add(f"{source} {edge} {destination}")
+                forms.add(f"{source} {edge} to {destination}")
                 if edge.isalpha():
                     forms.add(f"{source} {edge}s {destination}")
+                    forms.add(f"{source} {edge}s to {destination}")
                 source_pattern = re.escape(fold(source))
                 edge_pattern = re.escape(fold(edge))
                 destination_pattern = re.escape(normalize(destination))
@@ -383,6 +408,8 @@ def _grade(case_id, answer, artifacts, *, check_sessions):
             or not all(isinstance(item, str) for item in args)
         ):
             failures.append("missing action arguments")
+            continue
+        if verified_help(action):
             continue
         args = command_arguments(args)
         if not args:

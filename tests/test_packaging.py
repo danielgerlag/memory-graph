@@ -1,3 +1,4 @@
+import re
 import subprocess
 import sys
 import zipfile
@@ -46,3 +47,14 @@ def test_archive_has_one_skill_folder(tmp_path):
     assert not any(".venv" in name or "__pycache__" in name for name in names)
     with pytest.raises(package.PackageError, match="already exists"):
         package.archive(output)
+
+
+def test_lockfiles_use_only_public_pypi():
+    for lock in (ROOT / "uv.lock", ROOT / "memory-graph/uv.lock"):
+        text = lock.read_text(encoding="utf-8")
+        assert 'registry = "https://pypi.org/simple"' in text
+        assert "visualstudio" not in text and "microsoft.io" not in text, lock
+        assert all(
+            url.startswith("https://files.pythonhosted.org/")
+            for url in re.findall(r'url = "(https://[^"]+)"', text)
+        ), lock

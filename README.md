@@ -119,11 +119,33 @@ printf '%s\n' '{"label":"Example note","kind":"claim","body":"A durable fact.","
 
 Start a fresh agent session, give it the absolute path in `STORE`, and ask it
 to recall the fact. For example: "Using the memory store at
-`/absolute/path/to/my-memory-store`, recall the example note." The CLI does
-not automatically select a store. See
+`/absolute/path/to/my-memory-store`, recall the example note." Without a
+registered default store the CLI does not select one. See
 [recipes](memory-graph/references/recipes.md) for revisions, relationships,
 lifecycle, and remote proposals. Run any command with `--help` for its
 arguments.
+
+## Multiple stores: per project, global, folder or Git remote
+
+Register named stores instead of passing a path every time. A project entry lives in
+`.memory-graph.json` (committable) and a global entry in `~/.config/memory-graph/stores.json`:
+
+```sh
+S="$SKILL_DIR/scripts/memory_graph.py"
+"$MG" "$S" stores add personal --path ~/memory/personal --init                 # global folder store
+"$MG" "$S" stores add team --remote git@github.com:org/team-memory.git \
+  --scope project --default                                                    # this project, Git remote
+"$MG" "$S" stores list
+"$MG" "$S" --store team find "release" --scope ops
+"$MG" "$S" stores sync team                                                    # pull accepted knowledge
+```
+
+A remote entry creates a managed clone and reads its fetched `main`; sharing and publication
+follow the rules below. Entries pin the store ID, a project name shadows a global one, and
+each command uses exactly one store, never a merge of several. Then tell the agent which
+store to use, or rely on the default. See the
+[recipes](memory-graph/references/recipes.md#named-stores-per-project-global-folder-or-git-remote)
+for details.
 
 ## Sharing and security
 

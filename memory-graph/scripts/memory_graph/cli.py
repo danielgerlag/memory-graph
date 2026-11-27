@@ -13,7 +13,7 @@ from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 from typing import NoReturn
 
-from . import cache, git_store, remotes, service
+from . import cache, git_store, registry, remotes, service
 
 
 def _input(path: str) -> dict:
@@ -62,6 +62,9 @@ class ArgumentParser(argparse.ArgumentParser):
 def parser() -> argparse.ArgumentParser:
     p = ArgumentParser(prog="memory-graph", description="Git-backed, committed-main graph memory")
     p.add_argument("--root", type=Path, help="dedicated Git memory-store root")
+    p.add_argument(
+        "--store", help="named store from 'stores list' (project or global); alternative to --root"
+    )
     p.add_argument("--json", action="store_true", help="JSON output (the default)")
     commands = p.add_subparsers(dest="command", required=True)
     commands.add_parser("init", help="initialize a new standalone store")
@@ -120,6 +123,26 @@ def parser() -> argparse.ArgumentParser:
     view.add_argument("--dest", type=Path, required=True)
     export = commands.add_parser("export-skill")
     export.add_argument("--dest", type=Path, required=True)
+    stores = commands.add_parser("stores", help="register, list, and select named stores")
+    store_commands = stores.add_subparsers(dest="stores_command", required=True)
+    add = store_commands.add_parser("add", help="register a folder or Git remote store")
+    add.add_argument("name")
+    source = add.add_mutually_exclusive_group(required=True)
+    source.add_argument("--path", help="local store folder")
+    source.add_argument("--remote", help="HTTPS, SSH, or local Git remote; cloned and attached")
+    add.add_argument("--mode", choices=registry.MODES, help="remote access mode (default propose)")
+    add.add_argument("--scope", choices=registry.SCOPES, default="global")
+    add.add_argument("--default", action="store_true", help="make it the default in this scope")
+    add.add_argument("--init", action="store_true", help="create a new store at --path")
+    store_commands.add_parser("list", help="list stores visible from this directory")
+    remove = store_commands.add_parser("remove", help="unregister a store; keeps its data")
+    remove.add_argument("name")
+    remove.add_argument("--scope", choices=registry.SCOPES, default="global")
+    default = store_commands.add_parser("default", help="choose the default store in a scope")
+    default.add_argument("name")
+    default.add_argument("--scope", choices=registry.SCOPES, default="global")
+    sync = store_commands.add_parser("sync", help="clone or fetch a remote store")
+    sync.add_argument("name")
     return p
 
 
@@ -135,9 +158,16 @@ def execute(args: argparse.Namespace) -> dict:
         _validate_skill_bundle(src)
         shutil.copytree(src, dest, ignore=shutil.ignore_patterns(".venv", "__pycache__", "*.pyc"))
         return {"destination": str(dest)}
+    if args.command == "stores":
+        return registry.run(args, Path.cwd())
+    if args.root is not None and args.store is not None:
+        raise service.GraphError("use either --root or --store, not both")
+    if args.root is None and args.command == "init":
+        raise service.GraphError("init requires --root (or: stores add NAME --path PATH --init)")
     if args.root is None:
-        raise service.GraphError("--root is required for store operations")
-    root = args.root.expanduser().absolute()
+        root = registry.resolve(args.store, Path.cwd())
+    else:
+        root = args.root.expanduser().absolute()
     if args.command == "init":
         commit = git_store.init_store(root)
         snap, _ = service.load(root)

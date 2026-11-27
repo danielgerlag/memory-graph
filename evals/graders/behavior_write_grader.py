@@ -11,9 +11,23 @@ from pathlib import Path
 from behavior_cases import compile_fixture, retry_request
 from controlled_core import MUTATIONS, READS, STORE_ID, command_arguments
 
+from graders.answers import normalize_notices, normalize_sources
 from graders.arguments import canonical_option, has_flag, positional_argument, verified_help
+from graders.behavior_grader import query_names_targets
 
 NODE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.md$")
+
+
+_FILLER = {"a", "an", "the", "is", "are", "was", "were", "in", "at", "on", "that"}
+
+
+def same_fact(label, expected):
+    """Equal ignoring case, punctuation, and articles/copulas, so natural phrasing is accepted."""
+
+    def words(text):
+        return [w for w in re.findall(r"[a-z0-9]+", text.casefold()) if w not in _FILLER]
+
+    return isinstance(label, str) and bool(words(expected)) and words(label) == words(expected)
 
 
 def _pairs(pairs):
@@ -218,6 +232,12 @@ def _answer(answer, node_ids, facts, sources, notices, commit):
         return False
     for key, item in expected.items():
         got = value[key]
+        if key == "notices" and isinstance(got, list):
+            got, _ = normalize_notices(got, notices, sources, facts)
+        if key == "sources" and isinstance(got, list):
+            cleaned = normalize_sources(got)
+            if cleaned is not None:
+                got = cleaned[0]
         if isinstance(item, list):
             if (
                 not isinstance(got, list)
@@ -271,8 +291,19 @@ def grade_write(case_id, answer, artifacts):
                 _option(args, "--scope") != case["scope"] or has_flag(args, "--include-unscoped")
             ):
                 raise ValueError("read command omitted or widened the required scope")
+        intended = {
+            "create": "create",
+            "reuse": "update",
+            "correction": "supersede",
+            "retry": "create",
+        }[spec["kind"]]
+        # A rejected attempt of the intended mutation (for example a usage error) changed nothing
+        # and is not judged; a rejected attempt of any other mutation still shows the wrong intent.
         mutations = [
-            action for action in actions if command_arguments(action["args"])[0] in MUTATIONS
+            action
+            for action in actions
+            if command_arguments(action["args"])[0] in MUTATIONS
+            and (action["status"] == "success" or command_arguments(action["args"])[0] != intended)
         ]
         expected_before = {path: text.encode() for path, text in fixture["files"].items()}
         if spec["kind"] != "retry" and (
@@ -288,6 +319,7 @@ def grade_write(case_id, answer, artifacts):
         parsed_mutations = [
             _check_action(action, operation_id, expected_action) for action in mutations
         ]
+        fact_labels = spec["facts"]
         if parsed_mutations:
             if spec["kind"] == "retry":
                 if any(
@@ -421,14 +453,15 @@ def grade_write(case_id, answer, artifacts):
                 new_id = next(iter(new_nodes))
                 node, body = new_nodes[new_id]
                 if (
-                    node.get("label") != spec["facts"][0]
+                    not same_fact(node.get("label"), spec["facts"][0])
                     or node.get("scope") != case["scope"]
                     or node.get("status") != "active"
                     or node.get("edges") != []
-                    or body.strip() not in {"", spec["facts"][0]}
+                    or len(body) > 4000
                     or not _source(node, spec["sources"][0], case["clock"])
                 ):
                     raise ValueError("created fact or reported evidence differs")
+                fact_labels = [node["label"]]
                 changed = {f"{new_id}.md"}
                 preconditions = {}
                 answer_ids = [new_id]
@@ -482,14 +515,15 @@ def grade_write(case_id, answer, artifacts):
                         if k not in {"status", "superseded_by", "updated_at"}
                     }
                     or old_body != previous_body
-                    or replacement.get("label") != spec["facts"][0]
+                    or not same_fact(replacement.get("label"), spec["facts"][0])
                     or replacement.get("scope") != case["scope"]
                     or replacement.get("status") != "active"
                     or replacement.get("edges") != []
-                    or replacement_body.strip() not in {"", spec["facts"][0]}
+                    or len(replacement_body) > 4000
                     or not _source(replacement, spec["sources"][0], case["clock"])
                 ):
                     raise ValueError("supersession lost history or evidence")
+                fact_labels = [replacement["label"]]
                 changed = {f"{old_id}.md", f"{new_id}.md"}
                 preconditions = {
                     old_id: hashlib.sha256(raw_before["tree"][f"{old_id}.md"]).hexdigest()
@@ -539,12 +573,11 @@ def grade_write(case_id, answer, artifacts):
                     rows = output.get("results", []) if isinstance(output, dict) else []
                     positional = positional_argument(action["args"])
                     found |= (
-                        isinstance(positional, str)
-                        and positional.casefold() == spec["query"].casefold()
+                        query_names_targets(positional, fixture)
                         and isinstance(output, dict)
                         and type(output.get("output_schema")) is int
                         and output["output_schema"] == 1
-                        and output.get("query", "").casefold() == spec["query"].casefold()
+                        and output.get("query", "").casefold() == positional.casefold()
                         and output.get("truncated") is False
                         and output.get("snapshot", {}).get("commit") == before["main"]
                         and output.get("snapshot", {}).get("store_id") == STORE_ID
@@ -583,7 +616,7 @@ def grade_write(case_id, answer, artifacts):
                         and output.get("snapshot", {}).get("source") == "main"
                         and [row.get("id") for row in rows] == answer_ids
                         and all(
-                            row.get("label") == spec["facts"][0]
+                            row.get("label") == fact_labels[0]
                             and row.get("scope") == case["scope"]
                             and row.get("status") == "active"
                             for row in rows
@@ -594,7 +627,7 @@ def grade_write(case_id, answer, artifacts):
         if not _answer(
             answer,
             answer_ids,
-            spec["facts"],
+            fact_labels,
             spec.get("sources", []),
             spec.get("notices", []),
             after["main"],

@@ -59,7 +59,7 @@ def graph_cli(
             and isinstance(input_text, str)
             and len(input_text) <= 65536
         )
-        if valid and command_args[0] in MUTATIONS:
+        if valid and command_args[0] in MUTATIONS and not is_safe_help(args):
             valid = command_args.count("--input") == 1 and command_args.index("--input") + 1 < len(
                 command_args
             )

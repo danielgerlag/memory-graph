@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import uuid
 from datetime import UTC, datetime
@@ -470,6 +471,101 @@ def attach(root: Path, remote: str, mode: str) -> dict:
         return config
 
 
+def _remove_tree(path: Path) -> None:
+    """Delete a tree, including the deliberately read-only transport directory."""
+
+    def make_writable_and_retry(function, target, _error):
+        os.chmod(Path(target).parent, 0o700)
+        function(target)
+
+    shutil.rmtree(path, onexc=make_writable_and_retry)
+
+
+def clone(url: str, destination: Path, mode: str, expected_store_id: str | None = None) -> dict:
+    """Create an attached local clone of a remote store, reading only its fetched main."""
+    if not isinstance(mode, str) or mode not in _MODES:
+        raise RemoteError("Mode must be read, propose, or write")
+    destination = Path(destination)
+    if destination.exists() and (not destination.is_dir() or any(destination.iterdir())):
+        raise RemoteError("Clone destination already exists")
+    destination.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        git_store._run(destination, ["init", "--initial-branch=main", "--template="])
+        root = _root(destination)
+        with _lock(root):
+            endpoint, local = _endpoint(root, url)
+            _git(root, "config", "--local", "remote.origin.url", url)
+            _remote(root, "origin")
+            fetched = _download_main(root, endpoint, local, _credentials(root, endpoint))
+            temporary_ref = f"refs/memory-graph/fetch/{uuid.uuid4()}"
+            _git(root, "update-ref", temporary_ref, fetched, "0" * len(fetched))
+            try:
+                commit, _, store_id = _snapshot(root, temporary_ref)
+                if expected_store_id is not None and store_id != expected_store_id:
+                    raise RemoteError("Remote store identity does not match the registered store")
+                _git(root, "update-ref", "refs/heads/main", commit, "0" * len(commit))
+                _git(root, "update-ref", _ref("origin"), commit, "0" * len(commit))
+            finally:
+                _git(root, "update-ref", "-d", temporary_ref, fetched)
+            fetched_at = datetime.now(UTC).isoformat()
+            config = {
+                "remote": "origin",
+                "mode": mode,
+                "store_id": store_id,
+                "fetched_at": fetched_at,
+                "last_fetch": fetched_at,
+                "fetched_commit": commit,
+                "endpoint_id": _endpoint_id(endpoint),
+            }
+            _write_config(root, config)
+            return config
+    except BaseException:
+        # The destination was absent or empty, so removing it discards only this attempt.
+        _remove_tree(destination)
+        raise
+
+
+def _download_main(
+    root: Path, endpoint: str, local: bool, credentials: tuple[tuple[str, str], ...]
+) -> str:
+    """Fetch the endpoint's single main commit into the object store and return its ID."""
+    upload_pack = (
+        "git -c core.alternateRefsCommand=true upload-pack" if local else "git-upload-pack"
+    )
+    advertised = _git(
+        root,
+        "ls-remote",
+        f"--upload-pack={upload_pack}",
+        "--refs",
+        "--",
+        endpoint,
+        "refs/heads/main",
+        transport=True,
+        credentials=credentials,
+    ).splitlines()
+    if len(advertised) != 1:
+        raise RemoteError("Remote main ref is missing or ambiguous")
+    fields = advertised[0].split("\t")
+    if len(fields) != 2 or not _OID.fullmatch(fields[0]) or fields[1] != "refs/heads/main":
+        raise RemoteError("Remote main ref is invalid")
+    fetched = fields[0]
+    _git(
+        root,
+        "fetch",
+        "--no-tags",
+        "--no-recurse-submodules",
+        "--no-write-fetch-head",
+        "--refmap=",
+        f"--upload-pack={upload_pack}",
+        "--",
+        endpoint,
+        fetched,
+        transport=True,
+        credentials=credentials,
+    )
+    return fetched
+
+
 def fetch(root: Path) -> dict:
     root = _root(root)
     with _lock(root):
@@ -487,40 +583,7 @@ def fetch(root: Path) -> dict:
         fetched = None
         temporary_created = False
         try:
-            upload_pack = (
-                "git -c core.alternateRefsCommand=true upload-pack" if local else "git-upload-pack"
-            )
-            advertised = _git(
-                root,
-                "ls-remote",
-                f"--upload-pack={upload_pack}",
-                "--refs",
-                "--",
-                endpoint,
-                "refs/heads/main",
-                transport=True,
-                credentials=credentials,
-            ).splitlines()
-            if len(advertised) != 1:
-                raise RemoteError("Remote main ref is missing or ambiguous")
-            fields = advertised[0].split("\t")
-            if len(fields) != 2 or not _OID.fullmatch(fields[0]) or fields[1] != "refs/heads/main":
-                raise RemoteError("Remote main ref is invalid")
-            fetched = fields[0]
-            _git(
-                root,
-                "fetch",
-                "--no-tags",
-                "--no-recurse-submodules",
-                "--no-write-fetch-head",
-                "--refmap=",
-                f"--upload-pack={upload_pack}",
-                "--",
-                endpoint,
-                fetched,
-                transport=True,
-                credentials=credentials,
-            )
+            fetched = _download_main(root, endpoint, local, credentials)
             _git(root, "update-ref", temporary_ref, fetched, "0" * len(fetched))
             temporary_created = True
             commit = _validate_pair(root, config, temporary_ref)

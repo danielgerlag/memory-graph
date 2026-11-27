@@ -8,7 +8,12 @@ from behavior_cases import compile_fixture, semantic_id
 from controlled_core import MUTATIONS, READS, STORE_ID, command_arguments
 
 from graders.arguments import has_flag, positional_argument, verified_help
-from graders.behavior_grader import _fixture_matches_corpus, _json, _option
+from graders.behavior_grader import (
+    _fixture_matches_corpus,
+    _json,
+    _option,
+    query_names_targets,
+)
 from graders.behavior_write_grader import _answer, _unpack
 
 
@@ -72,8 +77,7 @@ def grade_special(case_id, answer, artifacts):
                         error.get("error", {}).get("message", "") if isinstance(error, dict) else ""
                     )
                     found |= (
-                        isinstance(positional, str)
-                        and positional.casefold() == spec["query"].casefold()
+                        query_names_targets(positional, fixture)
                         and "invalid main snapshot" in message
                     )
                 elif args[0] == "diagnose":
@@ -120,8 +124,7 @@ def grade_special(case_id, answer, artifacts):
                 rows = output.get("results")
                 target = ids[spec["targets"][0]]
                 found |= (
-                    isinstance(positional, str)
-                    and positional.casefold() == spec["query"].casefold()
+                    query_names_targets(positional, fixture)
                     and output.get("truncated") is False
                     and isinstance(rows, list)
                     and len(rows) == 1
@@ -142,6 +145,9 @@ def grade_special(case_id, answer, artifacts):
                         and by_id[ids["review"]].get("review_due") is True
                         and by_id[ids["review"]].get("expired") is False
                     )
+        if spec["kind"] == "timed-review":
+            # `review` lists the current and expired nodes; a separate `find` is not required.
+            found = found or reviewed
         if not found or (spec["kind"] == "malformed" and not diagnosed):
             raise ValueError("missing honest recall or diagnostic evidence")
         if spec["kind"] == "timed-review" and not reviewed:

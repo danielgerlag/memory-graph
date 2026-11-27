@@ -3,7 +3,7 @@
 id: read-only
 category: read-only
 prompts:
-  - Where is the seed tin? Just answer, changing nothing.
+  - What do we know about the seed tin? Just answer, changing nothing.
 scope: orchard
 fixture:
   main:

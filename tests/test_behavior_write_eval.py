@@ -352,6 +352,64 @@ class RealLocalGitTests(unittest.TestCase):
             behavior_write_grader.grade_write("repeat-existing", answer, artifacts)["success"]
         )
 
+    def test_rejected_attempt_of_the_intended_mutation_is_not_judged(self):
+        root, fixture = self.create_store("atomic-correction")
+        before = self.snapshot(root)
+        old_id = fixture["ids"]["old"]
+        request = {
+            "id": old_id,
+            "expected_revision": before["tree_files"][f"{old_id}.md"],
+            "replacement": {
+                "label": fixture["spec"]["facts"][0],
+                "kind": "claim",
+                "scope": "orchard",
+                "evidence_mode": "reported",
+                "sources": [
+                    {
+                        "kind": "interaction",
+                        "observed_at": fixture["case"]["clock"],
+                        "ref": "interaction:correction",
+                    }
+                ],
+            },
+        }
+        action = self.cli(
+            root, ["supersede", "--operation", fixture["operation_id"], "--input", "-"], request
+        )
+        replacement = next(
+            node for node in json.loads(action["stdout"])["receipt"]["node_ids"] if node != old_id
+        )
+        recall = self.cli(root, ["find", "kite", "--scope", "orchard"])
+        after = self.snapshot(root)
+        answer = self.answer(
+            replacement,
+            fixture["spec"]["facts"][0],
+            after["main"],
+            sources=fixture["spec"]["sources"],
+        )
+
+        def rejected(args):
+            return {
+                "args": args,
+                "input_text": "{}",
+                "status": "error",
+                "stdout": "",
+                "stderr": "usage error",
+            }
+
+        def grade(extra):
+            artifacts = {
+                "before": before,
+                "after": after,
+                "actions": [extra, action, recall],
+                "bootstrap": None,
+            }
+            return behavior_write_grader.grade_write("atomic-correction", answer, artifacts)
+
+        result = grade(rejected(["supersede", "ID", "--scope", "orchard"]))
+        self.assertTrue(result["success"], result["failures"])
+        self.assertFalse(grade(rejected(["create", "--input", "-"]))["success"])
+
     def test_repeat_can_update_without_changing_fact_identity(self):
         root, fixture = self.create_store("repeat-existing")
         before = self.snapshot(root)

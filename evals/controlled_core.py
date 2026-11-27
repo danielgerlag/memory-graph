@@ -32,12 +32,12 @@ def command_arguments(args):
 
 
 def is_safe_help(args):
+    """Global help, or help for a known command; argparse help never touches the store."""
     command = command_arguments(args)
-    return command in (
-        ["--help"],
-        ["-h"],
-        ["fetch", "--help"],
-        ["fetch", "-h"],
+    return command in (["--help"], ["-h"]) or (
+        len(command) == 2
+        and command[1] in ("--help", "-h")
+        and command[0] in READS | MUTATIONS | {"fetch"}
     )
 
 
