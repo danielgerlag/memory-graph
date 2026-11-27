@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import re
@@ -183,6 +184,21 @@ def run_holdout(root, config, baseline, candidate, timeout):
     }
 
 
+def classify_error(report):
+    """Return ("budget", limit) only when Inspect recorded a real limit; else retryable "infra"."""
+    path = report.get("inspect_log")
+    if not path:
+        return "infra", None
+    with contextlib.suppress(Exception):  # an unreadable log is an infrastructure problem
+        from inspect_ai.log import read_eval_log
+
+        log = read_eval_log(path)
+        sample = log.samples[0] if log.samples else None
+        if sample is not None and sample.limit is not None:
+            return "budget", sample.limit.type
+    return "infra", None
+
+
 def run_holdout_matrix(
     root, config, candidates, models, case_ids, trials, workers, timeout, env=None, infra_retries=2
 ):
@@ -203,6 +219,11 @@ def run_holdout_matrix(
         paths[name] = candidate_dir / f"{name}.md"
         paths[name].write_text(text, encoding="utf-8")
         paths[name].chmod(0o600)
+
+    expected_bundle = {
+        name: bundle_hash({**skill_files(), "SKILL.md": text.encode("utf-8")})
+        for name, text in candidates.items()
+    }
 
     def one(name, model, case_id, trial):
         row = {"candidate": name, "model": model, "case": case_id, "trial": trial}
@@ -235,21 +256,30 @@ def run_holdout_matrix(
                     timeout=timeout,
                     check=False,
                 )
-            except subprocess.TimeoutExpired:
+                path = trial_dir / "report.json"
+                report = json.loads(path.read_text(encoding="utf-8"))
+            except (subprocess.TimeoutExpired, OSError, ValueError):
                 continue
-            path = trial_dir / "report.json"
-            if not path.is_file():
-                continue
-            report = json.loads(path.read_text(encoding="utf-8"))
-            row.update(
-                status=report.get("status"),
-                detail=report.get("score_detail") or "; ".join(report.get("problems") or []),
-                observations=report.get("observations", []),
-                report=str(path.relative_to(root)),
-            )
-            if report.get("status") in {"PASS", "FAIL"} or "limit exhaustion" in " ".join(
-                report.get("problems") or []
-            ):
+            status = report.get("status")
+            problems = "; ".join(report.get("problems") or [])
+            kind = None
+            if status == "ERROR":
+                kind, limit = classify_error(report)
+                if kind == "infra":
+                    continue
+            if status in {"PASS", "FAIL"} or kind == "budget":
+                if (
+                    report.get("case_id") != case_id
+                    or report.get("skill_sha256") != expected_bundle[name]
+                ):
+                    row.update(status="ERROR", detail="trial evidence does not match the request")
+                    return row
+                row.update(
+                    status=status if kind is None else "BUDGET",
+                    detail=report.get("score_detail") or problems or f"ran out of {limit}",
+                    observations=report.get("observations", []),
+                    report=str(path.relative_to(root)),
+                )
                 return row
         row.setdefault("status", "ERROR")
         return row

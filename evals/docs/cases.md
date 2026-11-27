@@ -18,21 +18,26 @@ for the current snapshot.
 Graders judge outcomes, not exact wording, so a correct run is not failed for
 harmless phrasing:
 
-- **Search terms:** any query that matches the target node's label, aliases,
-  tags, or body is accepted, as long as the search actually returns the target
-  in the requested scope.
-- **Created facts:** a label counts as the requested fact when it matches after
-  ignoring case, punctuation, and articles/copulas ("Amber kite is stored in the
-  loft" = "amber kite stored in loft"). The answer's facts must be the label the
-  model really created. The body text is free.
+- **Search terms:** a query is accepted when it matches the target node's label, aliases,
+  tags, or body (or, for a traversal, its root), and the search actually returns the target in
+  the requested scope. Queries shorter than three characters count only if they are the
+  node's whole label. A case with nothing to find (`missing-evidence`) accepts a query that is
+  part of, or contains, its subject ("spool", "silver spool", "the silver spool").
+- **Created facts:** a label counts as the requested fact when it matches after ignoring
+  case, punctuation, and the articles `a`/`an`/`the` and `is`/`are` ("Amber kite is stored in
+  the loft" = "amber kite stored in loft"). Prepositions and tense still count ("on" is not
+  "in"; "was" is not "is"). The answer's facts must be the label the model really created.
+  The body may be empty or a short text (500 characters at most) that shares at least half
+  of the fact's content words ("The user saw the amber kite in the loft"); unrelated prose fails.
 - **Notices:** an extra `unknown` beside a correctly retrieved, unsourced fact is
   recorded as an observation rather than a failure. Empty-string source
   placeholders are treated as no source.
 - **Relationships:** "A connects to B" and "A connects B" are both accepted.
-- **Help:** `COMMAND --help` for any known command is allowed and ignored by the
-  graders. Rejected (never-executed) commands still fail a trial, because an
-  invented command is a real instruction-following error. A mutation the CLI
-  rejected changes nothing, so only accepted mutations are judged.
+- **Help:** `COMMAND --help` for any known command is allowed and removed from the trace
+  before grading. Rejected (never-executed) commands still fail a trial, because an
+  invented command is a real instruction-following error. A rejected attempt of the
+  *intended* mutation (for example a usage error) changed nothing and is ignored; a rejected
+  attempt of any other mutation, or of any mutation in the retry case, still fails.
 - **Underspecified cases name their subject or required notice** in the
   case's `controlled.instruction`, as `offline-stale` always did: `shared-read`,
   `expired-review`, and `bound-store`.

@@ -72,27 +72,44 @@ def _provenance(result, commit):
     )
 
 
-def query_names_targets(positional, fixture):
-    """True when a nonempty query is a substring of every target node's searchable text."""
+MIN_QUERY = 3
+
+
+def _hits(needle, fields):
+    """A short query must be a whole label; otherwise it must be a substring of some field."""
+    return any(needle == field.casefold().strip() for field in fields) or (
+        len(needle) >= MIN_QUERY and any(needle in field.casefold() for field in fields)
+    )
+
+
+def _target_fields(alias, fixture):
+    node = fixture["nodes"][alias]
+    facts = {fact["id"]: fact for fact in fixture["case"]["fixture"]["main"]["facts"]}
+    return (
+        node["label"],
+        " ".join(node.get("aliases", [])),
+        " ".join(node.get("tags", [])),
+        json.dumps(node.get("properties", {}), ensure_ascii=False, sort_keys=True),
+        facts.get(alias, {}).get("body", ""),
+    )
+
+
+def query_names_targets(positional, fixture, aliases=None):
+    """True when a query names every expected node, or, with none, the case's own subject.
+
+    `aliases` are the nodes the search should find (the targets, or the root of a traversal).
+    """
     if not isinstance(positional, str) or not positional.strip():
         return False
-    spec, nodes = fixture["spec"], fixture["nodes"]
-    if not spec["targets"]:
-        return True
-    needle = positional.casefold()
-    facts = {fact["id"]: fact for fact in fixture["case"]["fixture"]["main"]["facts"]}
-    for alias in spec["targets"]:
-        node = nodes[alias]
-        fields = (
-            node["label"],
-            " ".join(node.get("aliases", [])),
-            " ".join(node.get("tags", [])),
-            json.dumps(node.get("properties", {}), ensure_ascii=False, sort_keys=True),
-            facts.get(alias, {}).get("body", ""),
-        )
-        if not any(needle in field.casefold() for field in fields):
-            return False
-    return True
+    spec = fixture["spec"]
+    needle = positional.casefold().strip()
+    aliases = spec["targets"] if aliases is None else aliases
+    if not aliases:
+        if spec["kind"] == "malformed":
+            return True  # an invalid store fails every search the same way
+        subject = spec["query"].casefold()
+        return len(needle) >= MIN_QUERY and (needle in subject or subject in needle)
+    return all(_hits(needle, _target_fields(alias, fixture)) for alias in aliases)
 
 
 def _find_query_matches(positional, result, fixture, aliases):
@@ -102,22 +119,7 @@ def _find_query_matches(positional, result, fixture, aliases):
         or result.get("query") != positional
     ):
         return False
-    if not aliases:
-        return positional.casefold() == fixture["spec"]["query"].casefold()
-    facts = {fact["id"]: fact for fact in fixture["case"]["fixture"]["main"]["facts"]}
-    needle = positional.casefold()
-    for alias in aliases:
-        node = fixture["nodes"][alias]
-        fields = (
-            node["label"],
-            " ".join(node.get("aliases", [])),
-            " ".join(node.get("tags", [])),
-            json.dumps(node.get("properties", {}), ensure_ascii=False, sort_keys=True),
-            facts[alias].get("body", ""),
-        )
-        if not any(needle in field.casefold() for field in fields):
-            return False
-    return True
+    return query_names_targets(positional, fixture, aliases)
 
 
 def _distances(fixture):

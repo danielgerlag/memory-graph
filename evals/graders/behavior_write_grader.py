@@ -18,16 +18,55 @@ from graders.behavior_grader import query_names_targets
 NODE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.md$")
 
 
-_FILLER = {"a", "an", "the", "is", "are", "was", "were", "in", "at", "on", "that"}
+_FILLER = {"a", "an", "the", "is", "are"}
+MAX_BODY = 500
+
+
+def _words(text):
+    return [w for w in re.findall(r"\w+", text.casefold()) if w not in _FILLER]
 
 
 def same_fact(label, expected):
-    """Equal ignoring case, punctuation, and articles/copulas, so natural phrasing is accepted."""
+    """Equal ignoring case, punctuation, articles, and "is/are"; prepositions and tense count.
 
-    def words(text):
-        return [w for w in re.findall(r"[a-z0-9]+", text.casefold()) if w not in _FILLER]
+    A single-letter token such as a grade or a vitamin is treated as an article; the corpus has
+    no such labels, so keep it that way or tighten this function.
+    """
+    return isinstance(label, str) and bool(_words(expected)) and _words(label) == _words(expected)
 
-    return isinstance(label, str) and bool(words(expected)) and words(label) == words(expected)
+
+def body_restates(body, fact):
+    """A body is empty, or short text that shares at least half of the fact's content words.
+
+    That admits a paraphrase ("The user saw the kite in the loft") and rejects unrelated prose
+    such as injected instructions. It cannot prove that extra detail is true.
+    """
+    if not body.strip():
+        return True
+    wanted = set(_words(fact))
+    return len(body) <= MAX_BODY and 2 * len(wanted & set(_words(body))) >= len(wanted)
+
+
+def judged_mutations(actions, kind):
+    """Mutations to judge: accepted ones, plus rejected ones that show the wrong intent.
+
+    A rejected attempt of the intended mutation (a usage error) changed nothing and is ignored,
+    except in the retry case, where a rejected create may be an altered request.
+    """
+    intended = {
+        "create": "create",
+        "reuse": "update",
+        "correction": "supersede",
+        "retry": "create",
+    }[kind]
+    chosen = []
+    for action in actions:
+        name = command_arguments(action["args"])[0]
+        if name in MUTATIONS and (
+            action["status"] == "success" or name != intended or kind == "retry"
+        ):
+            chosen.append(action)
+    return chosen
 
 
 def _pairs(pairs):
@@ -291,20 +330,9 @@ def grade_write(case_id, answer, artifacts):
                 _option(args, "--scope") != case["scope"] or has_flag(args, "--include-unscoped")
             ):
                 raise ValueError("read command omitted or widened the required scope")
-        intended = {
-            "create": "create",
-            "reuse": "update",
-            "correction": "supersede",
-            "retry": "create",
-        }[spec["kind"]]
-        # A rejected attempt of the intended mutation (for example a usage error) changed nothing
-        # and is not judged; a rejected attempt of any other mutation still shows the wrong intent.
-        mutations = [
-            action
-            for action in actions
-            if command_arguments(action["args"])[0] in MUTATIONS
-            and (action["status"] == "success" or command_arguments(action["args"])[0] != intended)
-        ]
+        # Help output is not a command result; later checks must not parse it.
+        actions = [action for action in actions if not verified_help(action)]
+        mutations = judged_mutations(actions, spec["kind"])
         expected_before = {path: text.encode() for path, text in fixture["files"].items()}
         if spec["kind"] != "retry" and (
             raw_before["tree"] != expected_before or raw_before["working"] != expected_before
@@ -457,7 +485,7 @@ def grade_write(case_id, answer, artifacts):
                     or node.get("scope") != case["scope"]
                     or node.get("status") != "active"
                     or node.get("edges") != []
-                    or len(body) > 4000
+                    or not body_restates(body, spec["facts"][0])
                     or not _source(node, spec["sources"][0], case["clock"])
                 ):
                     raise ValueError("created fact or reported evidence differs")
@@ -519,7 +547,7 @@ def grade_write(case_id, answer, artifacts):
                     or replacement.get("scope") != case["scope"]
                     or replacement.get("status") != "active"
                     or replacement.get("edges") != []
-                    or len(replacement_body) > 4000
+                    or not body_restates(replacement_body, spec["facts"][0])
                     or not _source(replacement, spec["sources"][0], case["clock"])
                 ):
                     raise ValueError("supersession lost history or evidence")

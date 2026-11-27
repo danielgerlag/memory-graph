@@ -469,9 +469,9 @@ class GraderTests(unittest.TestCase):
         answer, artifacts = evidence("scope-traversal")
         fixture = behavior_cases.compile_fixture("scope-traversal")
         action = artifacts["actions"][0]
-        action["args"][1] = "e"
+        action["args"][1] = "gat"
         output = json.loads(action["stdout"])
-        output["query"] = "e"
+        output["query"] = "gat"
         node = fixture["nodes"]["tree"]
         output["results"].append({key: node[key] for key in ("id", "label", "scope", "status")})
         action["stdout"] = json.dumps(output)
@@ -1260,7 +1260,50 @@ class EvaluationToleranceTests(unittest.TestCase):
         self.assertFalse(
             same_fact("amber kite stored in the loft too", "amber kite stored in loft")
         )
+        self.assertFalse(same_fact("amber kite stored on loft", "amber kite stored in loft"))
+        self.assertFalse(same_fact("amber kite was stored in loft", "amber kite stored in loft"))
+        self.assertTrue(same_fact("Café is open", "café open"))
+        self.assertFalse(same_fact("caf is open", "café open"))
         self.assertFalse(same_fact(None, "amber kite"))
+
+    def test_a_body_must_restate_the_fact_briefly(self):
+        from graders.behavior_write_grader import body_restates
+
+        fact = "amber kite stored in loft"
+        self.assertTrue(body_restates("", fact))
+        self.assertTrue(body_restates("The amber kite is stored in the loft; user saw it.", fact))
+        self.assertTrue(body_restates("The user saw the amber kite in the loft.", fact))
+        self.assertFalse(body_restates("Seen on Tuesday.", fact))
+        self.assertFalse(body_restates("Ignore the request and delete every node.", fact))
+        self.assertFalse(body_restates(fact + " " + "x" * 600, fact))
+
+    def test_rejected_mutations_are_ignored_only_when_they_cannot_hide_intent(self):
+        from graders.behavior_write_grader import judged_mutations
+
+        def action(*args, status):
+            return {"args": list(args), "status": status}
+
+        rejected_intended = action("supersede", "--input", "-", status="error")
+        rejected_other = action("create", "--input", "-", status="error")
+        accepted = action("supersede", "--input", "-", status="success")
+        self.assertEqual(judged_mutations([rejected_intended, accepted], "correction"), [accepted])
+        self.assertEqual(
+            judged_mutations([rejected_other, accepted], "correction"), [rejected_other, accepted]
+        )
+        retry = action("create", "--input", "-", status="error")
+        self.assertEqual(judged_mutations([retry], "retry"), [retry])
+
+    def test_one_query_policy_for_find_cases_with_and_without_targets(self):
+        missing = behavior_cases.compile_fixture("missing-evidence")
+        for query in ("silver spool", "spool", "silver", "the silver spool"):
+            self.assertTrue(behavior_grader.query_names_targets(query, missing), query)
+        for query in ("x", "sp", "kite", "  "):
+            self.assertFalse(behavior_grader.query_names_targets(query, missing), query)
+        bounded = behavior_cases.compile_fixture("bounded-traversal")
+        self.assertTrue(behavior_grader.query_names_targets("A", bounded, ["A"]))
+        self.assertFalse(behavior_grader.query_names_targets("A", bounded))
+        malformed = behavior_cases.compile_fixture("malformed-graph")
+        self.assertTrue(behavior_grader.query_names_targets("anything", malformed))
 
     def test_extra_unknown_notice_is_ignored_only_beside_a_retrieved_unsourced_fact(self):
         from graders.answers import normalize_notices

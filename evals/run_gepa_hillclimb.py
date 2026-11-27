@@ -29,7 +29,7 @@ from behavior_cases import SPECS, UNSUPPORTED, dataset
 from controlled_core import command_arguments
 from corpus import verify_corpus
 from gepa_holdout import EXTENDED_CASE_IDS as HOLDOUT_CASES
-from gepa_holdout import run_holdout_matrix
+from gepa_holdout import classify_error, run_holdout_matrix
 from inspect_task import bundle_hash, skill_files
 from run_gepa import OptimizationError, Reflector, split_skill, valid_body, write_private
 
@@ -61,6 +61,8 @@ def trial_facts(report):
     """Commands, final answer, and any limit that stopped the trial, from the Inspect log."""
     from inspect_ai.log import read_eval_log
 
+    if not report.get("inspect_log"):
+        return [], "", None
     log = read_eval_log(report["inspect_log"])
     sample = log.samples[0] if log.samples else None
     if sample is None:
@@ -227,9 +229,18 @@ class MultiModelAdapter:
             except subprocess.TimeoutExpired:
                 continue
             report_path = trial_dir / "report.json"
-            if not report_path.is_file():
+            try:
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
                 continue
-            report = json.loads(report_path.read_text(encoding="utf-8"))
+            status = report.get("status")
+            limit = None
+            if status == "ERROR":
+                kind, limit = classify_error(report)
+                if kind == "infra":
+                    continue  # a crash or an API error is not evidence about the skill
+            elif status not in {"PASS", "FAIL"}:
+                continue
             if (
                 report.get("case_id") != case_id
                 or report.get("skill_sha256") != expected_bundle
@@ -237,34 +248,26 @@ class MultiModelAdapter:
                 or report.get("corpus_source_sha256") != self.corpus_hash
             ):
                 raise OptimizationError(f"trial produced invalid evidence: {report_path}")
-            status = report.get("status")
-            problems = " ".join(report.get("problems") or [])
-            if status in {"PASS", "FAIL"} or "limit exhaustion" in problems:
-                commands, answer, limit = trial_facts(report)
-                outcome = status if status in {"PASS", "FAIL"} else "BUDGET"
-                checks = report.get("score_detail") or ""
-                if outcome == "BUDGET":
-                    checks = f"ran out of its {limit or 'resource'} budget before finishing"
-                result = {
+            commands, answer, _ = trial_facts(report)
+            outcome = status if status in {"PASS", "FAIL"} else "BUDGET"
+            checks = report.get("score_detail") or ""
+            if outcome == "BUDGET":
+                checks = f"ran out of its {limit} budget before finishing"
+            result = {"outcome": outcome, "checks": checks, "commands": commands, "answer": answer}
+            self._record(
+                {
+                    "candidate": candidate_sha[:12],
+                    "case": case_id,
+                    "model": model,
                     "outcome": outcome,
-                    "checks": checks,
-                    "commands": commands,
-                    "answer": answer,
+                    "checks": checks[:200],
+                    "seconds": round(time.monotonic() - started, 1),
+                    "traces": traces,
+                    "report": str(report_path.relative_to(ROOT)),
+                    "attempts": attempt + 1,
                 }
-                self._record(
-                    {
-                        "candidate": candidate_sha[:12],
-                        "case": case_id,
-                        "model": model,
-                        "outcome": outcome,
-                        "checks": checks[:200],
-                        "seconds": round(time.monotonic() - started, 1),
-                        "traces": traces,
-                        "report": str(report_path.relative_to(ROOT)),
-                        "attempts": attempt + 1,
-                    }
-                )
-                return result
+            )
+            return result
         self._record(
             {
                 "candidate": candidate_sha[:12],
@@ -382,6 +385,42 @@ def environment(docker_bin):
     return env
 
 
+def run_options(args, seed_text):
+    return {
+        "models": list(args.models),
+        "reflection_model": args.reflection_model,
+        "targeted_edits": args.targeted_edits,
+        "minibatch": args.minibatch,
+        "seed_sha256": hashlib.sha256(seed_text.encode("utf-8")).hexdigest(),
+    }
+
+
+def prepare_run(root, args, seed_text):
+    """Create a run directory, or validate a resume before any model call is made.
+
+    Returns the trials and reflections already spent so budgets stay cumulative.
+    """
+    options = run_options(args, seed_text)
+    if not root.exists():
+        for name in ("candidates", "trials", "reflections"):
+            (root / name).mkdir(mode=0o700, parents=True)
+        write_private(root / "seed.md", seed_text)
+        write_private(root / "options.json", json.dumps(options, indent=2) + "\n")
+        return 0, 0
+    if not args.resume:
+        raise ValueError(f"{root} exists; pass --resume to continue it")
+    if (root / "summary.json").exists():
+        raise ValueError(f"{root} already finished; start a new --name instead of resuming it")
+    saved = root / "options.json"
+    if not saved.is_file() or json.loads(saved.read_text(encoding="utf-8")) != options:
+        raise ValueError("models, reflection model, seed, or settings differ from the original run")
+    evaluations = root / "evaluations.jsonl"
+    trials = (
+        len(evaluations.read_text(encoding="utf-8").splitlines()) if evaluations.exists() else 0
+    )
+    return trials, len(list((root / "reflections").iterdir()))
+
+
 def optimize(args):
     if set(TRAIN_CASES) & set(VALIDATION_CASES) or set(HOLDOUT_CASES) & (
         set(TRAIN_CASES) | set(VALIDATION_CASES)
@@ -395,13 +434,7 @@ def optimize(args):
     bundle = skill_files()
     prefix, body = split_skill(Path(args.seed).read_text(encoding="utf-8"))
     root = ROOT / "eval-runs" / args.name
-    resuming = root.exists()
-    if resuming and not args.resume:
-        raise ValueError(f"{root} exists; pass --resume to continue it")
-    for name in ("candidates", "trials", "reflections"):
-        (root / name).mkdir(mode=0o700, parents=True, exist_ok=True)
-    if not resuming:
-        write_private(root / "seed.md", prefix + body)
+    spent_trials, spent_reflections = prepare_run(root, args, prefix + body)
     adapter = MultiModelAdapter(
         root=root,
         config=config,
@@ -413,6 +446,7 @@ def optimize(args):
         timeout=trial_args.wall_timeout + 60,
         env=environment(args.docker_bin),
     )
+    adapter.trials = spent_trials
     reflector = Reflector(
         root=root,
         config=config,
@@ -421,10 +455,18 @@ def optimize(args):
         max_tokens=args.reflection_max_tokens,
         model=f"openai/azure/{args.reflection_model}",
     )
+    reflector.calls = spent_reflections
     deadline = time.monotonic() + args.max_seconds
+    # Stop before the hard trial cap can be hit in the middle of a batch (which would lose the
+    # best candidate): leave room for one validation pass with every retry.
+    headroom = len(args.models) * max(len(VALIDATION_CASES), args.minibatch) * (1 + INFRA_RETRIES)
 
     def stop(_state):
-        return reflector.calls >= args.max_reflections or time.monotonic() >= deadline
+        return (
+            reflector.calls >= args.max_reflections
+            or time.monotonic() >= deadline
+            or adapter.trials + headroom > args.max_trials
+        )
 
     import gepa
 
@@ -498,11 +540,22 @@ def optimize(args):
     print(json.dumps(summary, indent=2, default=str))
 
 
+def candidate_texts(paths):
+    """Map each candidate file to its text; two files with one name would silently collapse."""
+    texts = {}
+    for path in paths:
+        name = Path(path).stem
+        if name in texts:
+            raise ValueError(f"candidate name {name!r} is used twice; rename one of the files")
+        texts[name] = Path(path).read_text(encoding="utf-8")
+    return texts
+
+
 def holdout(args):
+    if not 1 <= args.trials <= 3:
+        raise ValueError("--trials must be 1 to 3 (the corpus defines three trials per case)")
     config = Path(args.config).absolute()
-    candidates = {
-        Path(path).stem: Path(path).read_text(encoding="utf-8") for path in args.candidates
-    }
+    candidates = candidate_texts(args.candidates)
     root = ROOT / "eval-runs" / args.name
     root.mkdir(mode=0o700, parents=True, exist_ok=False)
     trial_args = run_behavior.parser().parse_args(["--run", "--config", str(config)])

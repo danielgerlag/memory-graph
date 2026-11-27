@@ -410,6 +410,23 @@ class RealLocalGitTests(unittest.TestCase):
         self.assertTrue(result["success"], result["failures"])
         self.assertFalse(grade(rejected(["create", "--input", "-"]))["success"])
 
+        def help_action(*args):
+            return {
+                "args": list(args),
+                "input_text": "",
+                "status": "success",
+                "stdout": "usage: memory-graph " + " ".join(args) + "\n",
+                "stderr": "",
+            }
+
+        for position in (0, 1, 2):
+            actions = [action, recall]
+            actions.insert(position, help_action("supersede", "--help"))
+            actions.append(help_action("find", "--help"))
+            artifacts = {"before": before, "after": after, "actions": actions, "bootstrap": None}
+            result = behavior_write_grader.grade_write("atomic-correction", answer, artifacts)
+            self.assertTrue(result["success"], (position, result["failures"]))
+
     def test_repeat_can_update_without_changing_fact_identity(self):
         root, fixture = self.create_store("repeat-existing")
         before = self.snapshot(root)
