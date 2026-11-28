@@ -135,6 +135,61 @@ failure details and paths; the gitignored output directory is not an
 access-control boundary. Text that could be interpreted as a spreadsheet
 formula is prefixed with an apostrophe.
 
+## Baselines and regression checks
+
+`evals/baselines/` holds compact, committed baselines: per-model, per-case pass,
+fail and error counts, plus the identity of what produced them (skill, dataset,
+corpus and grader hashes, limits, sandbox image). They contain no transcripts,
+so they are small enough to review in a diff. The current one is
+`skill-v1.json`: the shipped skill on five Foundry models, 3 trials of each of
+22 cases, run with 16 turns and tools, 40,000 tokens, 4,000-token generations
+and a 240 s limit (the limits are stored in the file).
+
+Record a baseline from a saved run directory (`<model>/<case>-t<N>/report.json`).
+Trials are re-graded offline with the current graders first, with no model calls:
+
+```sh
+uv run --locked python evals/baseline.py record eval-runs/MY-RUN --name NAME --note "what and why"
+```
+
+After changing the skill, CLI, cases or graders, run the same matrix, then:
+
+```sh
+uv run --locked python evals/baseline.py compare skill-v1 eval-runs/NEW-RUN
+```
+
+The report gives the candidate-minus-baseline pass rate with a 95% interval,
+a per-model and a per-case breakdown, and one verdict (exit status 0 only for
+`PASS`):
+
+| Verdict | Meaning |
+|---|---|
+| `PASS` | The interval's lower bound is at or above the -5 point margin, no case clearly lost passes, and at most 5% of candidate trials errored. |
+| `REGRESSION` | The whole interval is below zero. |
+| `INCONCLUSIVE` | Anything else: a wide interval, a case that lost passes, or too many errors. Add trials or investigate. It is never a pass. |
+
+How to read it:
+
+- The three trials of one case are not independent, so the interval resamples
+  **cases**. Errors are excluded from rates and reported separately.
+- A simulation on this baseline's own rates gave false `REGRESSION` verdicts for
+  about 5% of same-skill reruns and caught a true 10-point drop about 85% of the
+  time. A 5-point drop is flagged as a regression about a third of the time (and is otherwise
+  `INCONCLUSIVE`), so small regressions need
+  more cases or trials than one run provides.
+- `compare` refuses to run when the dataset, corpus or grader hashes differ,
+  because the numbers would not mean the same thing. If only the graders changed,
+  re-record the baseline from its saved run directory with `record --force`;
+  otherwise re-run it. Differences in limits or sandbox image are reported as notes.
+- Use the same models, trial count and limits. Re-record a baseline when a
+  model alias is updated.
+- A baseline is evidence about one skill text on these cases. Cases used to tune
+  the skill stop being independent, so keep fresh holdout cases for generalization
+  claims.
+
+Running a model matrix needs credentials and costs money, so it is a manual
+release step, not part of CI. CI only validates that committed baselines parse.
+
 ## Optimize skill instructions with GEPA
 
 GEPA proposes instruction changes using feedback from the controlled behavior
@@ -214,6 +269,9 @@ evals/
   configs/               combined runner configuration templates
   graders/               independent artifact and imported-evidence graders
   results.py              export saved trial reports as CSV
+  baseline.py             record baselines and compare a run against one
+  regrade.py              re-grade saved trials offline with the current graders
+  baselines/              committed per-model, per-case baseline counts
   run_gepa_hillclimb.py   multi-model GEPA optimizer and holdout comparison
   corpus.yaml            dataset metadata and trial count
   corpus.lock.json       pinned source and generated-dataset hashes

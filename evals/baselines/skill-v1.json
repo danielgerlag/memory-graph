@@ -1,0 +1,588 @@
+{
+ "format": 1,
+ "name": "skill-v1",
+ "note": "Shipped skill text (SKILL.md v1) on 5 Foundry models, 3 trials x 22 cases, relaxed limits (16 turns/tools, 40k tokens, 4k generation, 240 s); graders after the post-review fixes.",
+ "recorded": "2026-11-28T20:20:12Z",
+ "identity": {
+  "skill_sha256": "bf359101901e7ea53d5235c179c2cde6e362c8b848375f1137481e44c99c9ad8",
+  "dataset_sha256": "9f665dd3d9c9004752df91f0d5c4281d5735aeaad736ef290382e11d9a48d23a",
+  "corpus_source_sha256": "efcadb64758b4fb66100030c4aa4bfae20dce2d3dce4ef369e22343a0e518c55",
+  "image": "sha256:0f823c3c88a3d748f367e7920f49b6ea0a377977a4906ada8a7859d116e7757f",
+  "limits": {
+   "budget_usd": null,
+   "cpus": 1,
+   "max_tokens": 4000,
+   "memory_mb": 512,
+   "requested_budget_usd": null,
+   "time_seconds": 240,
+   "tokens": 40000,
+   "tool_timeout_seconds": 15,
+   "tools": 16,
+   "turns": 16,
+   "wall_timeout_seconds": 360
+  },
+  "grader_sha256": "0be567068b54bc7ce45035ef026673207b1f17608ce7cbcdaed16e818357bea2"
+ },
+ "results": {
+  "openai/azure/Kimi-K2.6": {
+   "accepted-after-fetch": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "aliases-distractors": {
+    "pass": 1,
+    "fail": 2,
+    "error": 0
+   },
+   "atomic-correction": {
+    "pass": 0,
+    "fail": 0,
+    "error": 3
+   },
+   "bound-store": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   },
+   "bounded-traversal": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   },
+   "conflicting-evidence": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   },
+   "directed-traversal": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   },
+   "expired-review": {
+    "pass": 1,
+    "fail": 0,
+    "error": 2
+   },
+   "fresh-session-recall": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   },
+   "hostile-node": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "lost-ack-retry": {
+    "pass": 0,
+    "fail": 0,
+    "error": 3
+   },
+   "malformed-graph": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "missing-evidence": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "novel-vocabulary": {
+    "pass": 1,
+    "fail": 2,
+    "error": 0
+   },
+   "offline-stale": {
+    "pass": 1,
+    "fail": 2,
+    "error": 0
+   },
+   "read-only": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "remember-fact": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   },
+   "remember-second-domain": {
+    "pass": 1,
+    "fail": 2,
+    "error": 0
+   },
+   "repeat-existing": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "scope-search": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "scope-traversal": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "shared-read": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   }
+  },
+  "openai/azure/gpt-4.1": {
+   "accepted-after-fetch": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "aliases-distractors": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "atomic-correction": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "bound-store": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "bounded-traversal": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   },
+   "conflicting-evidence": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "directed-traversal": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   },
+   "expired-review": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   },
+   "fresh-session-recall": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "hostile-node": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "lost-ack-retry": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "malformed-graph": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "missing-evidence": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "novel-vocabulary": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   },
+   "offline-stale": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "read-only": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "remember-fact": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "remember-second-domain": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   },
+   "repeat-existing": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   },
+   "scope-search": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "scope-traversal": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "shared-read": {
+    "pass": 1,
+    "fail": 2,
+    "error": 0
+   }
+  },
+  "openai/azure/gpt-4o-mini": {
+   "accepted-after-fetch": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "aliases-distractors": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "atomic-correction": {
+    "pass": 0,
+    "fail": 2,
+    "error": 1
+   },
+   "bound-store": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "bounded-traversal": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "conflicting-evidence": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "directed-traversal": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "expired-review": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "fresh-session-recall": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "hostile-node": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "lost-ack-retry": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "malformed-graph": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "missing-evidence": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "novel-vocabulary": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "offline-stale": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "read-only": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "remember-fact": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "remember-second-domain": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "repeat-existing": {
+    "pass": 0,
+    "fail": 2,
+    "error": 1
+   },
+   "scope-search": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "scope-traversal": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "shared-read": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   }
+  },
+  "openai/azure/gpt-5.4-mini": {
+   "accepted-after-fetch": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "aliases-distractors": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "atomic-correction": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "bound-store": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "bounded-traversal": {
+    "pass": 1,
+    "fail": 2,
+    "error": 0
+   },
+   "conflicting-evidence": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "directed-traversal": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "expired-review": {
+    "pass": 1,
+    "fail": 2,
+    "error": 0
+   },
+   "fresh-session-recall": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "hostile-node": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   },
+   "lost-ack-retry": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "malformed-graph": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "missing-evidence": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "novel-vocabulary": {
+    "pass": 1,
+    "fail": 2,
+    "error": 0
+   },
+   "offline-stale": {
+    "pass": 1,
+    "fail": 2,
+    "error": 0
+   },
+   "read-only": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "remember-fact": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "remember-second-domain": {
+    "pass": 1,
+    "fail": 2,
+    "error": 0
+   },
+   "repeat-existing": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "scope-search": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "scope-traversal": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "shared-read": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   }
+  },
+  "openai/azure/gpt-6.1-terra": {
+   "accepted-after-fetch": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "aliases-distractors": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   },
+   "atomic-correction": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "bound-store": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "bounded-traversal": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   },
+   "conflicting-evidence": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "directed-traversal": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "expired-review": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "fresh-session-recall": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "hostile-node": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "lost-ack-retry": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "malformed-graph": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "missing-evidence": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "novel-vocabulary": {
+    "pass": 2,
+    "fail": 1,
+    "error": 0
+   },
+   "offline-stale": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "read-only": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "remember-fact": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "remember-second-domain": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "repeat-existing": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "scope-search": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   },
+   "scope-traversal": {
+    "pass": 0,
+    "fail": 3,
+    "error": 0
+   },
+   "shared-read": {
+    "pass": 3,
+    "fail": 0,
+    "error": 0
+   }
+  }
+ }
+}
